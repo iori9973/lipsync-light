@@ -28,11 +28,20 @@ namespace UnityEngine
     {
         public string name = "";
         public HideFlags hideFlags;
+
+        public static void DestroyImmediate(Object obj) { }
+        public static void Destroy(Object obj)          { }
     }
 
     public class Transform : Object
     {
         public Transform? parent;
+
+        public Transform? Find(string name)
+        {
+            // スタブ実装: 常に null を返す
+            return null;
+        }
     }
 
     public class GameObject : Object
@@ -41,18 +50,25 @@ namespace UnityEngine
         public GameObject()           { transform = new Transform { name = "" }; }
         public GameObject(string n)   { name = n; transform = new Transform { name = n }; }
         public T? GetComponent<T>() where T : class => null;
+        public T? GetComponentInParent<T>() where T : class => null;
+        public T AddComponent<T>() where T : Component, new() => new T();
     }
 
     public class Component : Object
     {
         public Transform transform { get; set; } = new Transform();
         public GameObject gameObject { get; set; } = new GameObject();
+        public T? GetComponent<T>() where T : class => null;
+        public T? GetComponentInParent<T>() where T : class => null;
+        public T AddComponent<T>() where T : Component, new() => new T();
     }
 
     public class Behaviour : Component
     {
         public bool enabled = true;
     }
+
+    public class MonoBehaviour : Behaviour { }
 
     public class Renderer : Component
     {
@@ -116,6 +132,14 @@ namespace UnityEngine
 
     public class AvatarMask : Object { }
 
+    public static class Mathf
+    {
+        public static float Clamp(float v, float min, float max)
+            => v < min ? min : v > max ? max : v;
+        public static float Max(float a, float b) => a > b ? a : b;
+        public static float Abs(float v) => v < 0 ? -v : v;
+    }
+
     public struct Vector2 { public float x, y; }
     public struct Vector3
     {
@@ -125,6 +149,12 @@ namespace UnityEngine
 
     [AttributeUsage(AttributeTargets.Field | AttributeTargets.Property)]
     public sealed class TooltipAttribute : Attribute { public TooltipAttribute(string s) { } }
+
+    [AttributeUsage(AttributeTargets.Class)]
+    public sealed class DisallowMultipleComponent : Attribute { }
+
+    [AttributeUsage(AttributeTargets.Class)]
+    public sealed class AddComponentMenu : Attribute { public AddComponentMenu(string s) { } }
 
     public static class Application
     {
@@ -136,6 +166,13 @@ namespace UnityEngine
         public static void Log(object message)      { }
         public static void LogWarning(object msg)   { }
         public static void LogError(object message) { }
+    }
+
+    public static class Undo
+    {
+        public static void RegisterCreatedObjectUndo(Object obj, string name) { }
+        public static T AddComponent<T>(GameObject go) where T : Component, new()
+            => go.AddComponent<T>();
     }
 }
 
@@ -208,8 +245,16 @@ namespace UnityEditor
         public int     order;
     }
 
+    [AttributeUsage(AttributeTargets.Class)]
+    public sealed class CustomEditor : Attribute { public CustomEditor(Type t) { } }
+
     [AttributeUsage(AttributeTargets.Field | AttributeTargets.Property)]
     public sealed class SerializeField : Attribute { }
+
+    public class Editor : Object
+    {
+        public virtual void OnInspectorGUI() { }
+    }
 
     public class EditorWindow : Object
     {
@@ -231,30 +276,34 @@ namespace UnityEditor
     {
         public static UnityEngine.Object ObjectField(string l, UnityEngine.Object o, Type t, bool b)
             => o!;
-        public static int   Popup(string l, int i, string[] opts)     => i;
-        public static int   IntField(string l, int v)                  => v;
-        public static float Slider(string l, float v, float min, float max) => v;
-        public static string TextField(string l, string v)             => v ?? "";
-        public static Color ColorField(string l, Color c)              => c;
-        public static bool  Foldout(bool f, string l, bool t)          => f;
-        public static float FloatField(float v, params GUILayoutOption[] opts) => v;
+        public static int   Popup(string l, int i, string[] opts)               => i;
+        public static int   IntField(string l, int v)                           => v;
+        public static float Slider(string l, float v, float min, float max)     => v;
+        public static string TextField(string l, string v)                      => v ?? "";
+        public static string TextField(string v, params GUILayoutOption[] opts) => v ?? "";
+        public static Color ColorField(string l, Color c)                       => c;
+        public static bool  ToggleLeft(string l, bool v)                        => v;
+        public static bool  Foldout(bool f, string l, bool t)                  => f;
+        public static float FloatField(float v, params GUILayoutOption[] opts)  => v;
         public static float FloatField(string l, float v, params GUILayoutOption[] opts) => v;
-        public static void  LabelField(string l, GUIStyle? s = null)   { }
-        public static void  Space(float px)                            { }
+        public static void  LabelField(string l, GUIStyle? s = null)            { }
+        public static void  Space(float px)                                     { }
         public static Rect  GetControlRect(bool hasLabel = false, float height = 0f) => default;
-        public static void  HelpBox(string msg, MessageType t)         { }
-        public static void  BeginHorizontal()                          { }
-        public static void  EndHorizontal()                            { }
-        public static void  BeginVertical(GUIStyle? s = null)         { }
-        public static void  EndVertical()                              { }
-        public static Vector2 BeginScrollView(Vector2 pos)             => pos;
-        public static void  EndScrollView()                            { }
+        public static void  HelpBox(string msg, MessageType t)                  { }
+        public static void  BeginHorizontal()                                   { }
+        public static void  EndHorizontal()                                     { }
+        public static void  BeginVertical(GUIStyle? s = null)                  { }
+        public static void  EndVertical()                                       { }
+        public static Vector2 BeginScrollView(Vector2 pos)                      => pos;
+        public static void  EndScrollView()                                     { }
     }
 
     public static class EditorGUI
     {
         public static int  indentLevel;
         public static void DrawRect(Rect r, Color c)     { }
+        public static void BeginDisabledGroup(bool d)    { }
+        public static void EndDisabledGroup()            { }
 
         public sealed class DisabledScope : IDisposable
         {
@@ -265,7 +314,7 @@ namespace UnityEditor
 
     public static class GUILayout
     {
-        public static bool   Button(string l, params GUILayoutOption[] opts) => false;
+        public static bool   Button(string l, params GUILayoutOption[] opts)    => false;
         public static string TextField(string v, params GUILayoutOption[] opts) => v ?? "";
         public static int    SelectionGrid(int i, string[] opts, int cols,
             params GUILayoutOption[] extra) => i;
@@ -339,6 +388,16 @@ namespace UnityEditor.Animations
         public bool     writeDefaultValues = true;
         public bool     timeParameterActive;
         public string   timeParameter = "";
+
+        private readonly List<AnimatorStateTransition> _transitions = new List<AnimatorStateTransition>();
+        public AnimatorStateTransition[] transitions => _transitions.ToArray();
+
+        public AnimatorStateTransition AddTransition(AnimatorState destinationState)
+        {
+            var t = new AnimatorStateTransition();
+            _transitions.Add(t);
+            return t;
+        }
     }
 
     public class AnimatorStateMachine : UnityEngine.Object
@@ -393,7 +452,7 @@ namespace UnityEditor.Animations
 
     public class AnimatorController : RuntimeAnimatorController
     {
-        private readonly List<AnimatorControllerLayer>    _layers     = new List<AnimatorControllerLayer>();
+        private readonly List<AnimatorControllerLayer>     _layers     = new List<AnimatorControllerLayer>();
         private readonly List<AnimatorControllerParameter> _parameters = new List<AnimatorControllerParameter>();
 
         public AnimatorControllerLayer[]     layers     => _layers.ToArray();
@@ -408,5 +467,9 @@ namespace UnityEditor.Animations
             => _parameters.Add(new AnimatorControllerParameter { name = name, type = type });
         public void RemoveParameter(int index)
         { if (index >= 0 && index < _parameters.Count) _parameters.RemoveAt(index); }
+
+        public static AnimatorController CreateAnimatorControllerAtPath(string path)
+            => new AnimatorController();
     }
 }
+

@@ -20,10 +20,14 @@
   </ItemGroup>
 
   <!-- Unity ソースファイルをテストプロジェクトに直接取り込む -->
-  <!-- Tests/ 配下は SDK が自動インクルードするため、Editor/ のファイルのみ明示的に追加 -->
   <ItemGroup>
+    <!-- Runtime: データクラス -->
+    <Compile Include="../Runtime/LipsyncMode.cs" />
+    <Compile Include="../Runtime/ColorGroup.cs" />
+    <Compile Include="../Runtime/EmissionTarget.cs" />
+    <Compile Include="../Runtime/LipsyncLightSetup.cs" />
+    <!-- Editor: ビルダー + ShaderPropertyDetector -->
     <Compile Include="../Editor/EmissionTarget.cs" />
-    <Compile Include="../Editor/LipsyncLightConfig.cs" />
     <Compile Include="../Editor/LipsyncLightBuilder.cs" />
   </ItemGroup>
 </Project>

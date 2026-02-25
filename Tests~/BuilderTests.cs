@@ -23,9 +23,9 @@ public class GetRelativePathTests
     [Fact]
     public void GrandChild_ReturnsTwoLevels()
     {
-        var root      = new Transform { name = "AvatarRoot" };
-        var child     = new Transform { name = "Body",   parent = root };
-        var grandchild = new Transform { name = "Head",  parent = child };
+        var root       = new Transform { name = "AvatarRoot" };
+        var child      = new Transform { name = "Body", parent = root };
+        var grandchild = new Transform { name = "Head", parent = child };
 
         string path = LipsyncLightBuilder.GetRelativePath(root, grandchild);
 
@@ -45,10 +45,10 @@ public class GetRelativePathTests
     [Fact]
     public void ThreeLevels_ReturnsSlashSeparatedPath()
     {
-        var root  = new Transform { name = "Root" };
-        var a     = new Transform { name = "A", parent = root };
-        var b     = new Transform { name = "B", parent = a };
-        var c     = new Transform { name = "C", parent = b };
+        var root = new Transform { name = "Root" };
+        var a    = new Transform { name = "A", parent = root };
+        var b    = new Transform { name = "B", parent = a };
+        var c    = new Transform { name = "C", parent = b };
 
         string path = LipsyncLightBuilder.GetRelativePath(root, c);
 
@@ -106,7 +106,6 @@ public class DetectFromPropertyNamesTests
     [Fact]
     public void ContainsEmissionColor2_ReturnsEmissionColor2()
     {
-        // _EmissionColor が無く _EmissionColor2 だけある場合
         var names = new[] { "_Color", "_EmissionColor2" };
 
         string? result = ShaderPropertyDetector.DetectFromPropertyNames(names);
@@ -121,7 +120,6 @@ public class DetectFromPropertyNamesTests
 
         string? result = ShaderPropertyDetector.DetectFromPropertyNames(names);
 
-        // s_knownEmissionProperties の先頭 (_EmissionColor) が優先される
         Assert.Equal("_EmissionColor", result);
     }
 
@@ -150,15 +148,15 @@ public class CreateEmissionClipTests
     private static (GameObject avatarRoot, MeshRenderer renderer) BuildHierarchy(
         string rootName, string childName)
     {
-        var avatarRoot       = new GameObject(rootName);
-        var childTransform   = new Transform { name = childName, parent = avatarRoot.transform };
-        var renderer         = new MeshRenderer();
-        renderer.transform   = childTransform;
+        var avatarRoot     = new GameObject(rootName);
+        var childTransform = new Transform { name = childName, parent = avatarRoot.transform };
+        var renderer       = new MeshRenderer();
+        renderer.transform = childTransform;
         return (avatarRoot, renderer);
     }
 
     [Fact]
-    public void SingleTarget_Creates4Bindings()
+    public void SingleTarget_SingleProperty_Creates4Bindings()
     {
         var (avatarRoot, renderer) = BuildHierarchy("Root", "Body");
         var targets = new List<EmissionTarget>
@@ -167,33 +165,51 @@ public class CreateEmissionClipTests
             {
                 Renderer      = renderer,
                 MaterialIndex = 0,
-                PropertyName  = "_EmissionColor",
+                PropertyNames = new List<string> { "_EmissionColor" },
                 OnColor       = Color.white,
             }
         };
 
-        var clip = LipsyncLightBuilder.CreateEmissionClip(
-            avatarRoot, targets, t => t.OnColor, "Test");
+        var clip     = LipsyncLightBuilder.CreateEmissionClip(avatarRoot, targets, t => t.OnColor, "Test");
         var bindings = AnimationUtility.GetCurveBindings(clip);
 
         Assert.Equal(4, bindings.Length); // r, g, b, a
     }
 
     [Fact]
-    public void TwoTargets_Creates8Bindings()
+    public void SingleTarget_TwoProperties_Creates8Bindings()
+    {
+        var (avatarRoot, renderer) = BuildHierarchy("Root", "Body");
+        var targets = new List<EmissionTarget>
+        {
+            new EmissionTarget
+            {
+                Renderer      = renderer,
+                MaterialIndex = 0,
+                PropertyNames = new List<string> { "_EmissionColor", "_EmissionColor2" },
+            }
+        };
+
+        var clip     = LipsyncLightBuilder.CreateEmissionClip(avatarRoot, targets, _ => Color.white, "Test");
+        var bindings = AnimationUtility.GetCurveBindings(clip);
+
+        Assert.Equal(8, bindings.Length); // 2 properties × 4 channels
+    }
+
+    [Fact]
+    public void TwoTargets_SingleProperty_Creates8Bindings()
     {
         var (avatarRoot, r1) = BuildHierarchy("Root", "Body");
-        var childTransform2 = new Transform { name = "Face", parent = avatarRoot.transform };
+        var childTransform2  = new Transform { name = "Face", parent = avatarRoot.transform };
         var r2 = new MeshRenderer { transform = childTransform2 };
 
         var targets = new List<EmissionTarget>
         {
-            new EmissionTarget { Renderer = r1, MaterialIndex = 0, PropertyName = "_EmissionColor" },
-            new EmissionTarget { Renderer = r2, MaterialIndex = 0, PropertyName = "_EmissionColor" },
+            new EmissionTarget { Renderer = r1, MaterialIndex = 0, PropertyNames = new List<string> { "_EmissionColor" } },
+            new EmissionTarget { Renderer = r2, MaterialIndex = 0, PropertyNames = new List<string> { "_EmissionColor" } },
         };
 
-        var clip = LipsyncLightBuilder.CreateEmissionClip(
-            avatarRoot, targets, t => Color.white, "Test");
+        var clip     = LipsyncLightBuilder.CreateEmissionClip(avatarRoot, targets, _ => Color.white, "Test");
         var bindings = AnimationUtility.GetCurveBindings(clip);
 
         Assert.Equal(8, bindings.Length);
@@ -209,7 +225,7 @@ public class CreateEmissionClipTests
             {
                 Renderer      = renderer,
                 MaterialIndex = 0,
-                PropertyName  = "_EmissionColor",
+                PropertyNames = new List<string> { "_EmissionColor" },
             }
         };
 
@@ -229,7 +245,7 @@ public class CreateEmissionClipTests
             {
                 Renderer      = renderer,
                 MaterialIndex = 2,
-                PropertyName  = "_EmissionColor",
+                PropertyNames = new List<string> { "_EmissionColor" },
             }
         };
 
@@ -245,7 +261,12 @@ public class CreateEmissionClipTests
         var (avatarRoot, renderer) = BuildHierarchy("Root", "Body");
         var targets = new List<EmissionTarget>
         {
-            new EmissionTarget { Renderer = renderer, MaterialIndex = 0, PropertyName = "_EmissionColor" }
+            new EmissionTarget
+            {
+                Renderer      = renderer,
+                MaterialIndex = 0,
+                PropertyNames = new List<string> { "_EmissionColor" },
+            }
         };
 
         var clip     = LipsyncLightBuilder.CreateEmissionClip(avatarRoot, targets, _ => Color.white, "T");
@@ -260,7 +281,32 @@ public class CreateEmissionClipTests
         var avatarRoot = new GameObject("Root");
         var targets = new List<EmissionTarget>
         {
-            new EmissionTarget { Renderer = null!, MaterialIndex = 0, PropertyName = "_EmissionColor" }
+            new EmissionTarget
+            {
+                Renderer      = null!,
+                MaterialIndex = 0,
+                PropertyNames = new List<string> { "_EmissionColor" },
+            }
+        };
+
+        var clip     = LipsyncLightBuilder.CreateEmissionClip(avatarRoot, targets, _ => Color.white, "T");
+        var bindings = AnimationUtility.GetCurveBindings(clip);
+
+        Assert.Empty(bindings);
+    }
+
+    [Fact]
+    public void EmptyPropertyNames_IsSkipped()
+    {
+        var (avatarRoot, renderer) = BuildHierarchy("Root", "Body");
+        var targets = new List<EmissionTarget>
+        {
+            new EmissionTarget
+            {
+                Renderer      = renderer,
+                MaterialIndex = 0,
+                PropertyNames = new List<string>(), // 空
+            }
         };
 
         var clip     = LipsyncLightBuilder.CreateEmissionClip(avatarRoot, targets, _ => Color.white, "T");
@@ -275,7 +321,12 @@ public class CreateEmissionClipTests
         var (avatarRoot, renderer) = BuildHierarchy("Root", "Body");
         var targets = new List<EmissionTarget>
         {
-            new EmissionTarget { Renderer = renderer, MaterialIndex = 0, PropertyName = "_EmissionColor" }
+            new EmissionTarget
+            {
+                Renderer      = renderer,
+                MaterialIndex = 0,
+                PropertyNames = new List<string> { "_EmissionColor" },
+            }
         };
 
         var clip     = LipsyncLightBuilder.CreateEmissionClip(avatarRoot, targets, _ => Color.white, "T");

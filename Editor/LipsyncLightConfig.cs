@@ -1,41 +1,25 @@
-using System;
-using System.Collections.Generic;
-using UnityEngine;
 using UnityEditor;
+using UnityEngine;
 
 namespace LipsyncLight
 {
-    internal enum LipsyncMode
+    /// <summary>
+    /// LipSync Light Setup コンポーネントのカスタムインスペクター。
+    /// Inspector から直接 EditorWindow を開けるようにする。
+    /// </summary>
+    [CustomEditor(typeof(LipsyncLightSetup))]
+    internal class LipsyncLightSetupEditor : Editor
     {
-        Voice,
-        Viseme,
-        Both,
-    }
-
-    [Serializable]
-    internal class ColorGroup
-    {
-        public string Name = "";
-        public Color OffColor = Color.black;
-        public Color OnColor = Color.white;
-        public Color[] VisemeColors = new Color[15];
-        public float TransitionDuration = 0f;
-
-        public ColorGroup()
+        public override void OnInspectorGUI()
         {
-            for (int i = 0; i < VisemeColors.Length; i++)
-                VisemeColors[i] = Color.black;
-        }
-    }
+            if (GUILayout.Button("LipSync Light ウィンドウを開く", GUILayout.Height(28)))
+                LipsyncLightWindow.Open();
 
-    [CreateAssetMenu(fileName = "LipsyncLightConfig", menuName = "LipSync Light/Config")]
-    internal class LipsyncLightConfig : ScriptableObject
-    {
-        public GameObject AvatarRoot = null!;
-        public List<ColorGroup> ColorGroups = new List<ColorGroup>();
-        public List<EmissionTarget> Targets = new List<EmissionTarget>();
-        public LipsyncMode Mode = LipsyncMode.Voice;
-        public float IntensityMultiplier = 1.0f;
-        public string OutputPath = "Assets/LipSyncLight";
+            EditorGUILayout.Space(4);
+            EditorGUILayout.HelpBox(
+                "このコンポーネントは LipSync Light の設定を保持します。\n" +
+                "上のボタンから設定ウィンドウを開いて編集してください。",
+                MessageType.Info);
+        }
     }
 }

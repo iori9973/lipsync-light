@@ -1,4 +1,4 @@
-// VRC SDK3 API の最小限スタブ。
+// VRC SDK3 / Modular Avatar API の最小限スタブ。
 // テストプロジェクトは Unity/VRC SDK なしで動作するため、コンパイルに必要な型を定義する。
 using System;
 using UnityEngine;
@@ -24,5 +24,21 @@ namespace VRC.SDK3.Avatars.Components
 
         public CustomAnimLayer[] baseAnimationLayers    = Array.Empty<CustomAnimLayer>();
         public CustomAnimLayer[] specialAnimationLayers = Array.Empty<CustomAnimLayer>();
+    }
+}
+
+namespace nadena.dev.modular_avatar.core
+{
+    using VRC.SDK3.Avatars.Components;
+
+    public enum MergeAnimatorPathMode { Absolute, Relative }
+
+    public class ModularAvatarMergeAnimator : MonoBehaviour
+    {
+        public RuntimeAnimatorController animator = null!;
+        public VRCAvatarDescriptor.AnimLayerType layerType;
+        public bool deleteAttachedAnimator;
+        public MergeAnimatorPathMode pathMode;
+        public bool matchAvatarWriteDefaults;
     }
 }

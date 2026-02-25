@@ -1,14 +1,8 @@
 {
-    "name": "LipsyncLight.Editor",
+    "name": "LipsyncLight.Runtime",
     "rootNamespace": "LipsyncLight",
-    "references": [
-        "LipsyncLight.Runtime",
-        "VRC.SDK3A",
-        "nadena.dev.modular-avatar.core"
-    ],
-    "includePlatforms": [
-        "Editor"
-    ],
+    "references": [],
+    "includePlatforms": [],
     "excludePlatforms": [],
     "allowUnsafeCode": false,
     "overrideReferences": false,

@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using UnityEditor;
 using UnityEngine;
 
@@ -7,11 +8,18 @@ namespace LipsyncLight
 {
     internal class LipsyncLightWindow : EditorWindow
     {
-        private const string ConfigAssetPath = "Assets/LipSyncLight/LipsyncLightConfig.asset";
+        // アバタールート（シリアライズして domain reload 後も保持）
+        [SerializeField] private GameObject _avatarRoot;
 
-        [SerializeField] private LipsyncLightConfig _config;
-        [SerializeField] private List<bool> _visemeFoldouts = new List<bool>();
-        [SerializeField] private List<bool> _groupVisemeFoldouts = new List<bool>();
+        // セットアップコンポーネント（シリアライズ不要 - アバターから都度取得）
+        private LipsyncLightSetup _setup;
+
+        [SerializeField] private List<bool> _visemeFoldouts       = new List<bool>();
+        [SerializeField] private List<bool> _groupVisemeFoldouts  = new List<bool>();
+
+        // 手動プロパティ入力用（ターゲットインデックス → 入力中の文字列）
+        private readonly Dictionary<int, string> _propertyInputs = new Dictionary<int, string>();
+
         private Vector2 _scrollPos;
 
         // コピー&ペースト用クリップボード（セッション中のみ保持）
@@ -54,18 +62,18 @@ namespace LipsyncLight
 
         private void OnEnable()
         {
-            _config = AssetDatabase.LoadAssetAtPath<LipsyncLightConfig>(ConfigAssetPath);
+            // domain reload 後にアバタールートが残っていればセットアップを再取得
+            if (_avatarRoot != null)
+                TryLoadSetup();
         }
 
         private void OnDisable()
         {
-            SaveConfig();
+            SaveSetup();
         }
 
         private void OnGUI()
         {
-            EnsureConfig();
-
             _scrollPos = EditorGUILayout.BeginScrollView(_scrollPos);
             EditorGUILayout.Space(4);
 
@@ -73,33 +81,57 @@ namespace LipsyncLight
             EditorGUILayout.Space(4);
 
             // Avatar Root
-            _config.AvatarRoot = (GameObject)EditorGUILayout.ObjectField(
-                "Avatar Root", _config.AvatarRoot, typeof(GameObject), true);
+            var newRoot = (GameObject)EditorGUILayout.ObjectField(
+                "Avatar Root", _avatarRoot, typeof(GameObject), true);
+            if (newRoot != _avatarRoot)
+            {
+                _avatarRoot = newRoot;
+                _setup = null;
+                if (_avatarRoot != null)
+                    LoadOrCreateSetup();
+            }
+            else if (_setup == null && _avatarRoot != null)
+            {
+                LoadOrCreateSetup();
+            }
+
             EditorGUILayout.Space(8);
+
+            if (_setup == null)
+            {
+                EditorGUILayout.HelpBox("Avatar Root を設定してください。", MessageType.Info);
+                EditorGUILayout.EndScrollView();
+                return;
+            }
 
             // Mode
             DrawSectionHeader("モード");
-            _config.Mode = (LipsyncMode)GUILayout.SelectionGrid(
-                (int)_config.Mode,
+            _setup.Mode = (LipsyncMode)GUILayout.SelectionGrid(
+                (int)_setup.Mode,
                 new[] { "Voice 連動", "Viseme カラー", "両方" },
                 3);
+            EditorGUILayout.Space(4);
+
+            _setup.AdditiveBlending = EditorGUILayout.ToggleLeft(
+                "既存の発光に加算する（他のアニメーションと共存）", _setup.AdditiveBlending);
+            if (_setup.AdditiveBlending)
+                EditorGUILayout.HelpBox(
+                    "加算モード：LipSync Light の発光が既存の発光アニメーションに上乗せされます。\n" +
+                    "共存させたい場合は消灯カラーを黒（0,0,0,0）にしてください。",
+                    MessageType.Info);
             EditorGUILayout.Space(8);
 
             // Voice settings
-            if (_config.Mode == LipsyncMode.Voice || _config.Mode == LipsyncMode.Both)
+            if (_setup.Mode == LipsyncMode.Voice || _setup.Mode == LipsyncMode.Both)
             {
                 DrawSectionHeader("Voice 設定");
-                _config.IntensityMultiplier = EditorGUILayout.Slider(
-                    "強度倍率", _config.IntensityMultiplier, 0f, 2f);
+                _setup.IntensityMultiplier = EditorGUILayout.Slider(
+                    "強度倍率", _setup.IntensityMultiplier, 0f, 2f);
+                _setup.VoiceThreshold = EditorGUILayout.Slider(
+                    "点灯閾値", _setup.VoiceThreshold, 0f, 1f);
+                _setup.VoiceFadeTime = DurationField("フェード時間 (秒)", _setup.VoiceFadeTime);
                 EditorGUILayout.Space(8);
             }
-
-            // Color Groups
-            DrawSectionHeader("カラーグループ");
-            DrawColorGroupList();
-            if (GUILayout.Button("+ グループを追加"))
-                AddColorGroup();
-            EditorGUILayout.Space(8);
 
             // Targets
             DrawSectionHeader("ターゲット");
@@ -108,10 +140,17 @@ namespace LipsyncLight
                 AddTarget();
             EditorGUILayout.Space(8);
 
+            // Color Groups
+            DrawSectionHeader("カラーグループ");
+            DrawColorGroupList();
+            if (GUILayout.Button("+ グループを追加"))
+                AddColorGroup();
+            EditorGUILayout.Space(8);
+
             // Output path
             DrawSectionHeader("出力先");
             EditorGUILayout.BeginHorizontal();
-            EditorGUILayout.LabelField(_config.OutputPath, EditorStyles.textField, GUILayout.ExpandWidth(true));
+            EditorGUILayout.LabelField(_setup.OutputPath, EditorStyles.textField, GUILayout.ExpandWidth(true));
             if (GUILayout.Button("変更", GUILayout.Width(50)))
                 ChooseOutputPath();
             EditorGUILayout.EndHorizontal();
@@ -135,7 +174,7 @@ namespace LipsyncLight
             EditorGUILayout.EndScrollView();
 
             if (GUI.changed)
-                SaveConfig();
+                SaveSetup();
         }
 
         // ---------------------------------------------------------------
@@ -144,17 +183,14 @@ namespace LipsyncLight
 
         private void DrawColorGroupList()
         {
-            if (_config.ColorGroups == null) _config.ColorGroups = new System.Collections.Generic.List<ColorGroup>();
+            if (_setup.ColorGroups == null) _setup.ColorGroups = new List<ColorGroup>();
 
-            for (int i = 0; i < _config.ColorGroups.Count; i++)
+            for (int i = 0; i < _setup.ColorGroups.Count; i++)
             {
-                var group = _config.ColorGroups[i];
+                var group = _setup.ColorGroups[i];
 
-                // VisemeColors が未初期化の場合（古いデータ対応）
                 if (group.VisemeColors == null || group.VisemeColors.Length != 15)
-                {
                     group.VisemeColors = new Color[15];
-                }
 
                 EditorGUILayout.BeginVertical(EditorStyles.helpBox);
                 EditorGUILayout.BeginHorizontal();
@@ -163,17 +199,15 @@ namespace LipsyncLight
 
                 if (GUILayout.Button("削除", GUILayout.Width(44)))
                 {
-                    // このグループを参照しているターゲットのインデックスをリセット
-                    foreach (var t in _config.Targets)
+                    foreach (var t in _setup.Targets)
                     {
                         if (t.VoiceColorGroupIndex == i)  t.VoiceColorGroupIndex  = -1;
                         if (t.VisemeColorGroupIndex == i) t.VisemeColorGroupIndex = -1;
-                        // 削除されたグループより大きいインデックスを1つずらす
                         if (t.VoiceColorGroupIndex  > i) t.VoiceColorGroupIndex--;
                         if (t.VisemeColorGroupIndex > i) t.VisemeColorGroupIndex--;
                     }
-                    _config.ColorGroups.RemoveAt(i);
-                    SaveConfig();
+                    _setup.ColorGroups.RemoveAt(i);
+                    SaveSetup();
                     EditorGUILayout.EndHorizontal();
                     EditorGUILayout.EndVertical();
                     break;
@@ -181,11 +215,9 @@ namespace LipsyncLight
 
                 EditorGUILayout.EndHorizontal();
 
-                // Voice カラー
-                if (_config.Mode == LipsyncMode.Voice || _config.Mode == LipsyncMode.Both)
+                if (_setup.Mode == LipsyncMode.Voice || _setup.Mode == LipsyncMode.Both)
                 {
                     EditorGUILayout.BeginHorizontal();
-
                     if (GUILayout.Button("コピー", GUILayout.Width(52)))
                         s_voiceColorClipboard = (group.OffColor, group.OnColor);
                     using (new EditorGUI.DisabledScope(s_voiceColorClipboard == null))
@@ -194,7 +226,7 @@ namespace LipsyncLight
                         {
                             group.OffColor = s_voiceColorClipboard.Value.off;
                             group.OnColor  = s_voiceColorClipboard.Value.on;
-                            SaveConfig();
+                            SaveSetup();
                         }
                     }
                     EditorGUILayout.EndHorizontal();
@@ -205,13 +237,11 @@ namespace LipsyncLight
                     EditorGUILayout.EndHorizontal();
                 }
 
-                // Viseme カラー
-                if (_config.Mode == LipsyncMode.Viseme || _config.Mode == LipsyncMode.Both)
+                if (_setup.Mode == LipsyncMode.Viseme || _setup.Mode == LipsyncMode.Both)
                 {
                     group.TransitionDuration = DurationField("切り替え時間 (秒)", group.TransitionDuration);
 
                     EditorGUILayout.BeginHorizontal();
-
                     if (GUILayout.Button("コピー", GUILayout.Width(52)))
                     {
                         s_visemeColorClipboard = new Color[15];
@@ -222,7 +252,7 @@ namespace LipsyncLight
                         if (GUILayout.Button("貼り付け", GUILayout.Width(62)) && s_visemeColorClipboard != null)
                         {
                             s_visemeColorClipboard.CopyTo(group.VisemeColors, 0);
-                            SaveConfig();
+                            SaveSetup();
                         }
                     }
                     EditorGUILayout.EndHorizontal();
@@ -253,25 +283,24 @@ namespace LipsyncLight
 
         private void DrawTargetList()
         {
-            if (_config.Targets == null) _config.Targets = new System.Collections.Generic.List<EmissionTarget>();
+            if (_setup.Targets == null) _setup.Targets = new List<EmissionTarget>();
 
-            for (int i = 0; i < _config.Targets.Count; i++)
+            for (int i = 0; i < _setup.Targets.Count; i++)
             {
-                var target = _config.Targets[i];
+                var target = _setup.Targets[i];
 
-                // VisemeColors が未初期化の場合（古いデータ対応）
                 if (target.VisemeColors == null || target.VisemeColors.Length != 15)
-                {
                     target.VisemeColors = new Color[15];
-                }
+                if (target.PropertyNames == null)
+                    target.PropertyNames = new List<string> { "_EmissionColor" };
 
                 EditorGUILayout.BeginVertical(EditorStyles.helpBox);
                 EditorGUILayout.BeginHorizontal();
                 EditorGUILayout.LabelField($"ターゲット {i + 1}", EditorStyles.boldLabel);
                 if (GUILayout.Button("削除", GUILayout.Width(44)))
                 {
-                    _config.Targets.RemoveAt(i);
-                    SaveConfig();
+                    _setup.Targets.RemoveAt(i);
+                    SaveSetup();
                     EditorGUILayout.EndHorizontal();
                     EditorGUILayout.EndVertical();
                     break;
@@ -285,9 +314,13 @@ namespace LipsyncLight
                 {
                     target.Renderer = newRenderer;
                     if (newRenderer != null)
-                        target.PropertyName =
-                            ShaderPropertyDetector.DetectEmissionProperty(newRenderer, target.MaterialIndex)
-                            ?? "_EmissionColor";
+                    {
+                        // Renderer が変わったら既知の発光プロパティで初期化
+                        target.PropertyNames.Clear();
+                        var detected = ShaderPropertyDetector.DetectEmissionProperty(
+                            newRenderer, target.MaterialIndex);
+                        target.PropertyNames.Add(detected ?? "_EmissionColor");
+                    }
                 }
 
                 // Material index popup
@@ -307,20 +340,20 @@ namespace LipsyncLight
                     target.MaterialIndex = EditorGUILayout.IntField("Material Index", target.MaterialIndex);
                 }
 
-                // Property name
-                DrawPropertyField(target);
+                // Property name（複数チェックボックス）
+                DrawPropertyField(target, i);
 
                 // Voice カラー設定
-                if (_config.Mode == LipsyncMode.Voice || _config.Mode == LipsyncMode.Both)
+                if (_setup.Mode == LipsyncMode.Voice || _setup.Mode == LipsyncMode.Both)
                     DrawTargetVoiceColor(target, i);
 
                 // Viseme カラー設定
-                if (_config.Mode == LipsyncMode.Viseme || _config.Mode == LipsyncMode.Both)
+                if (_setup.Mode == LipsyncMode.Viseme || _setup.Mode == LipsyncMode.Both)
                     DrawTargetVisemeColor(target, i);
 
                 // グループとして保存ボタン
-                bool canSaveVoice  = (_config.Mode != LipsyncMode.Viseme) && target.VoiceColorGroupIndex  < 0;
-                bool canSaveViseme = (_config.Mode != LipsyncMode.Voice)  && target.VisemeColorGroupIndex < 0;
+                bool canSaveVoice  = (_setup.Mode != LipsyncMode.Viseme) && target.VoiceColorGroupIndex  < 0;
+                bool canSaveViseme = (_setup.Mode != LipsyncMode.Voice)  && target.VisemeColorGroupIndex < 0;
                 if (canSaveVoice || canSaveViseme)
                 {
                     EditorGUILayout.Space(2);
@@ -331,6 +364,89 @@ namespace LipsyncLight
                 EditorGUILayout.EndVertical();
                 EditorGUILayout.Space(2);
             }
+        }
+
+        // ---------------------------------------------------------------
+        // Property field（複数プロパティ チェックボックス選択）
+        // ---------------------------------------------------------------
+
+        private void DrawPropertyField(EmissionTarget target, int targetIndex)
+        {
+            if (target.PropertyNames == null) target.PropertyNames = new List<string>();
+
+            EditorGUILayout.LabelField("発光プロパティ", EditorStyles.boldLabel);
+            EditorGUI.indentLevel++;
+
+            if (target.Renderer != null)
+            {
+                var shaderProps = GetMaterialColorProperties(target.Renderer, target.MaterialIndex);
+
+                // 1. 既知の発光プロパティ（日本語ラベル付き）
+                foreach (var (prop, display) in KnownEmissionProperties)
+                {
+                    if (!shaderProps.Contains(prop)) continue;
+                    bool on    = target.PropertyNames.Contains(prop);
+                    bool newOn = EditorGUILayout.ToggleLeft(display, on);
+                    if (newOn && !on) target.PropertyNames.Add(prop);
+                    else if (!newOn && on) target.PropertyNames.Remove(prop);
+                }
+
+                // 2. 名前に "emission" を含むその他のプロパティ
+                foreach (var p in shaderProps)
+                {
+                    bool isKnown = KnownEmissionProperties.Any(kep => kep.prop == p);
+                    if (isKnown) continue;
+                    if (p.IndexOf("emission", System.StringComparison.OrdinalIgnoreCase) < 0) continue;
+
+                    bool on    = target.PropertyNames.Contains(p);
+                    bool newOn = EditorGUILayout.ToggleLeft(p, on);
+                    if (newOn && !on) target.PropertyNames.Add(p);
+                    else if (!newOn && on) target.PropertyNames.Remove(p);
+                }
+
+                // 3. シェーダーに存在しない手動追加プロパティの表示
+                foreach (var mp in target.PropertyNames.ToList())
+                {
+                    if (shaderProps.Contains(mp)) continue;
+                    EditorGUILayout.BeginHorizontal();
+                    EditorGUILayout.LabelField(mp, GUILayout.ExpandWidth(true));
+                    if (GUILayout.Button("×", GUILayout.Width(22)))
+                        target.PropertyNames.Remove(mp);
+                    EditorGUILayout.EndHorizontal();
+                }
+            }
+            else
+            {
+                // Renderer 未選択時は PropertyNames を直接表示
+                foreach (var mp in target.PropertyNames.ToList())
+                {
+                    EditorGUILayout.BeginHorizontal();
+                    EditorGUILayout.LabelField(mp, GUILayout.ExpandWidth(true));
+                    if (GUILayout.Button("×", GUILayout.Width(22)))
+                        target.PropertyNames.Remove(mp);
+                    EditorGUILayout.EndHorizontal();
+                }
+            }
+
+            // 手動追加フィールド
+            if (!_propertyInputs.ContainsKey(targetIndex))
+                _propertyInputs[targetIndex] = "";
+
+            EditorGUILayout.BeginHorizontal();
+            _propertyInputs[targetIndex] = EditorGUILayout.TextField(_propertyInputs[targetIndex]);
+            if (GUILayout.Button("追加", GUILayout.Width(44)))
+            {
+                var input = _propertyInputs[targetIndex].Trim();
+                if (!string.IsNullOrEmpty(input) && !target.PropertyNames.Contains(input))
+                {
+                    target.PropertyNames.Add(input);
+                    _propertyInputs[targetIndex] = "";
+                    SaveSetup();
+                }
+            }
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUI.indentLevel--;
         }
 
         // ---------------------------------------------------------------
@@ -348,7 +464,6 @@ namespace LipsyncLight
 
             if (target.VoiceColorGroupIndex < 0)
             {
-                // 独自設定: コピー/貼り付け → カラーフィールド
                 EditorGUILayout.BeginHorizontal();
                 if (GUILayout.Button("コピー", GUILayout.Width(52)))
                     s_voiceColorClipboard = (target.OffColor, target.OnColor);
@@ -358,7 +473,7 @@ namespace LipsyncLight
                     {
                         target.OffColor = s_voiceColorClipboard.Value.off;
                         target.OnColor  = s_voiceColorClipboard.Value.on;
-                        SaveConfig();
+                        SaveSetup();
                     }
                 }
                 EditorGUILayout.EndHorizontal();
@@ -370,14 +485,13 @@ namespace LipsyncLight
             }
             else
             {
-                // グループ設定: グループのカラーをグレーアウト表示
                 int gIdx = target.VoiceColorGroupIndex;
-                if (gIdx < _config.ColorGroups.Count)
+                if (gIdx < _setup.ColorGroups.Count)
                 {
                     EditorGUI.BeginDisabledGroup(true);
                     EditorGUILayout.BeginHorizontal();
-                    EditorGUILayout.ColorField("消灯", _config.ColorGroups[gIdx].OffColor);
-                    EditorGUILayout.ColorField("点灯", _config.ColorGroups[gIdx].OnColor);
+                    EditorGUILayout.ColorField("消灯", _setup.ColorGroups[gIdx].OffColor);
+                    EditorGUILayout.ColorField("点灯", _setup.ColorGroups[gIdx].OnColor);
                     EditorGUILayout.EndHorizontal();
                     EditorGUI.EndDisabledGroup();
                 }
@@ -402,7 +516,6 @@ namespace LipsyncLight
 
             if (target.VisemeColorGroupIndex < 0)
             {
-                // 独自設定: フォールドアウト内にコピー/貼り付け＋カラーフィールド
                 _visemeFoldouts[targetIndex] = EditorGUILayout.Foldout(
                     _visemeFoldouts[targetIndex], "Viseme カラー詳細", true);
                 if (_visemeFoldouts[targetIndex])
@@ -420,7 +533,7 @@ namespace LipsyncLight
                         if (GUILayout.Button("貼り付け", GUILayout.Width(62)) && s_visemeColorClipboard != null)
                         {
                             s_visemeColorClipboard.CopyTo(target.VisemeColors, 0);
-                            SaveConfig();
+                            SaveSetup();
                         }
                     }
                     EditorGUILayout.EndHorizontal();
@@ -434,15 +547,14 @@ namespace LipsyncLight
             }
             else
             {
-                // グループ設定: グループのカラーをグレーアウト表示
                 int gIdx = target.VisemeColorGroupIndex;
                 _visemeFoldouts[targetIndex] = EditorGUILayout.Foldout(
                     _visemeFoldouts[targetIndex], "Viseme カラー詳細（グループを表示中）", true);
-                if (_visemeFoldouts[targetIndex] && gIdx < _config.ColorGroups.Count)
+                if (_visemeFoldouts[targetIndex] && gIdx < _setup.ColorGroups.Count)
                 {
                     EditorGUI.BeginDisabledGroup(true);
                     EditorGUI.indentLevel++;
-                    var grp = _config.ColorGroups[gIdx];
+                    var grp = _setup.ColorGroups[gIdx];
                     for (int v = 0; v < 15; v++)
                         EditorGUILayout.ColorField(VisemeNames[v], grp.VisemeColors[v]);
                     EditorGUI.indentLevel--;
@@ -459,8 +571,8 @@ namespace LipsyncLight
         {
             var options = new List<(string label, int groupIdx)>();
             options.Add(("独自設定", -1));
-            for (int j = 0; j < _config.ColorGroups.Count; j++)
-                options.Add(($"グループ: {_config.ColorGroups[j].Name}", j));
+            for (int j = 0; j < _setup.ColorGroups.Count; j++)
+                options.Add(($"グループ: {_setup.ColorGroups[j].Name}", j));
             return options;
         }
 
@@ -481,10 +593,9 @@ namespace LipsyncLight
 
         private void CreateGroupFromTarget(EmissionTarget target, bool includeVoice, bool includeViseme)
         {
-            if (_config.ColorGroups == null)
-                _config.ColorGroups = new System.Collections.Generic.List<ColorGroup>();
+            if (_setup.ColorGroups == null) _setup.ColorGroups = new List<ColorGroup>();
 
-            int num   = _config.ColorGroups.Count + 1;
+            int num   = _setup.ColorGroups.Count + 1;
             var group = new ColorGroup { Name = $"グループ {num}" };
 
             if (includeVoice)
@@ -498,36 +609,35 @@ namespace LipsyncLight
                 group.TransitionDuration = target.TransitionDuration;
             }
 
-            _config.ColorGroups.Add(group);
-            int newIdx = _config.ColorGroups.Count - 1;
+            _setup.ColorGroups.Add(group);
+            int newIdx = _setup.ColorGroups.Count - 1;
 
             if (includeVoice)  target.VoiceColorGroupIndex  = newIdx;
             if (includeViseme) target.VisemeColorGroupIndex = newIdx;
 
-            SaveConfig();
+            SaveSetup();
         }
 
         private void AddColorGroup()
         {
-            if (_config.ColorGroups == null)
-                _config.ColorGroups = new System.Collections.Generic.List<ColorGroup>();
-            int num = _config.ColorGroups.Count + 1;
-            _config.ColorGroups.Add(new ColorGroup { Name = $"グループ {num}" });
-            SaveConfig();
+            if (_setup.ColorGroups == null) _setup.ColorGroups = new List<ColorGroup>();
+            int num = _setup.ColorGroups.Count + 1;
+            _setup.ColorGroups.Add(new ColorGroup { Name = $"グループ {num}" });
+            SaveSetup();
         }
 
         private void AddTarget()
         {
-            if (_config.Targets == null) _config.Targets = new System.Collections.Generic.List<EmissionTarget>();
-            _config.Targets.Add(new EmissionTarget()); // デフォルトは独自設定（グループ未割り当て）
-            SaveConfig();
+            if (_setup.Targets == null) _setup.Targets = new List<EmissionTarget>();
+            _setup.Targets.Add(new EmissionTarget());
+            SaveSetup();
         }
 
         private void RunSetup()
         {
             try
             {
-                LipsyncLightBuilder.Build(_config);
+                LipsyncLightBuilder.Build(_setup);
             }
             catch (System.Exception ex)
             {
@@ -540,13 +650,13 @@ namespace LipsyncLight
         {
             if (!EditorUtility.DisplayDialog(
                     "LipSync Light",
-                    "生成物（AnimationClip・Animator レイヤー）を削除しますか？",
+                    "生成物（AnimationClip・FX Controller・MA Merge Animator）を削除しますか？",
                     "削除", "キャンセル"))
                 return;
 
             try
             {
-                LipsyncLightBuilder.DeleteGenerated(_config);
+                LipsyncLightBuilder.DeleteGenerated(_setup);
             }
             catch (System.Exception ex)
             {
@@ -556,15 +666,15 @@ namespace LipsyncLight
 
         private void ChooseOutputPath()
         {
-            string current = string.IsNullOrEmpty(_config.OutputPath)
+            string current = string.IsNullOrEmpty(_setup.OutputPath)
                 ? Application.dataPath
-                : Path.GetFullPath(_config.OutputPath);
+                : Path.GetFullPath(_setup.OutputPath);
 
             string chosen = EditorUtility.SaveFolderPanel("出力フォルダの選択", current, "");
             if (string.IsNullOrEmpty(chosen)) return;
 
             if (chosen.StartsWith(Application.dataPath))
-                _config.OutputPath = "Assets" + chosen[Application.dataPath.Length..];
+                _setup.OutputPath = "Assets" + chosen[Application.dataPath.Length..];
             else
                 EditorUtility.DisplayDialog("LipSync Light", "Assets フォルダ内を選択してください。", "OK");
         }
@@ -575,142 +685,68 @@ namespace LipsyncLight
 
         private string Validate()
         {
-            if (_config.AvatarRoot == null)
+            if (_avatarRoot == null)
                 return "Avatar Root が設定されていません。";
-            if (_config.Targets == null || _config.Targets.Count == 0)
+            if (_avatarRoot.GetComponent<VRC.SDK3.Avatars.Components.VRCAvatarDescriptor>() == null)
+                return "Avatar Root に VRCAvatarDescriptor が見つかりません。";
+            if (_setup == null)
+                return "セットアップコンポーネントが見つかりません。";
+            if (_setup.Targets == null || _setup.Targets.Count == 0)
                 return "ターゲットが1つも設定されていません。";
-            for (int i = 0; i < _config.Targets.Count; i++)
+            for (int i = 0; i < _setup.Targets.Count; i++)
             {
-                var t = _config.Targets[i];
+                var t = _setup.Targets[i];
                 if (t.Renderer == null)
                     return $"ターゲット {i + 1} の Renderer が設定されていません。";
-                if (string.IsNullOrEmpty(t.PropertyName))
-                    return $"ターゲット {i + 1} の Property Name が空です。";
+                if (t.PropertyNames == null || t.PropertyNames.Count == 0)
+                    return $"ターゲット {i + 1} の発光プロパティが1つも選択されていません。";
             }
             return null;
         }
 
         // ---------------------------------------------------------------
-        // Config management
+        // Setup management
         // ---------------------------------------------------------------
 
-        private void EnsureConfig()
+        private void TryLoadSetup()
         {
-            if (_config != null) return;
-
-            _config = AssetDatabase.LoadAssetAtPath<LipsyncLightConfig>(ConfigAssetPath);
-            if (_config != null) return;
-
-            string dir = Path.GetDirectoryName(ConfigAssetPath);
-            if (!AssetDatabase.IsValidFolder(dir))
-            {
-                AssetDatabase.CreateFolder(
-                    Path.GetDirectoryName(dir),
-                    Path.GetFileName(dir));
-            }
-            _config = CreateInstance<LipsyncLightConfig>();
-            _config.ColorGroups.Add(new ColorGroup { Name = "グループ 1" });
-            AssetDatabase.CreateAsset(_config, ConfigAssetPath);
-            AssetDatabase.SaveAssets();
+            if (_avatarRoot == null) { _setup = null; return; }
+            var child = _avatarRoot.transform.Find("LipSync Light");
+            if (child != null)
+                _setup = child.GetComponent<LipsyncLightSetup>();
         }
 
-        private void SaveConfig()
+        private void LoadOrCreateSetup()
         {
-            if (_config == null) return;
-            EditorUtility.SetDirty(_config);
-            AssetDatabase.SaveAssets();
+            if (_avatarRoot == null) { _setup = null; return; }
+
+            // 既存の "LipSync Light" 子 GameObject を探す
+            var child = _avatarRoot.transform.Find("LipSync Light");
+            if (child != null)
+            {
+                _setup = child.GetComponent<LipsyncLightSetup>();
+                if (_setup != null) return;
+            }
+
+            // 新規作成
+            var go = new GameObject("LipSync Light");
+            Undo.RegisterCreatedObjectUndo(go, "Create LipSync Light");
+            go.transform.SetParent(_avatarRoot.transform, false);
+            _setup = Undo.AddComponent<LipsyncLightSetup>(go);
+            _setup.ColorGroups.Add(new ColorGroup { Name = "グループ 1" });
+            EditorUtility.SetDirty(_setup);
+        }
+
+        private void SaveSetup()
+        {
+            if (_setup == null) return;
+            EditorUtility.SetDirty(_setup);
         }
 
         // ---------------------------------------------------------------
         // UI helpers
         // ---------------------------------------------------------------
 
-        /// <summary>
-        /// Renderer が選択されていればシェーダーの Color プロパティをドロップダウンで表示。
-        /// 発光関連プロパティを先頭に日本語付きで、その他は区切り線の後に表示する。
-        /// 未選択時は自由入力テキストフィールドにフォールバック。
-        /// </summary>
-        private static void DrawPropertyField(EmissionTarget target)
-        {
-            if (target.Renderer != null)
-            {
-                var allProps = GetMaterialColorProperties(target.Renderer, target.MaterialIndex);
-                if (allProps.Length > 0)
-                {
-                    var displayList = new List<string>();
-                    var valueList   = new List<string>(); // null = セパレーター
-
-                    // 1. 既知の発光プロパティを先頭に日本語付きで追加
-                    bool hasEmission = false;
-                    foreach (var (prop, display) in KnownEmissionProperties)
-                    {
-                        foreach (var p in allProps)
-                        {
-                            if (p == prop)
-                            {
-                                displayList.Add(display);
-                                valueList.Add(prop);
-                                hasEmission = true;
-                                break;
-                            }
-                        }
-                    }
-
-                    // 2. その他の Color プロパティを区切り線の後に追加
-                    var otherProps = new List<string>();
-                    foreach (var p in allProps)
-                    {
-                        bool isKnown = false;
-                        foreach (var (known, _) in KnownEmissionProperties)
-                            if (p == known) { isKnown = true; break; }
-                        if (!isKnown) otherProps.Add(p);
-                    }
-
-                    if (otherProps.Count > 0)
-                    {
-                        if (hasEmission)
-                        {
-                            displayList.Add("── その他のカラー ──");
-                            valueList.Add(null);
-                        }
-                        foreach (var p in otherProps)
-                        {
-                            displayList.Add(p);
-                            valueList.Add(p);
-                        }
-                    }
-
-                    // 3. 現在の値がリストにない場合は先頭に追加
-                    if (!string.IsNullOrEmpty(target.PropertyName) && !valueList.Contains(target.PropertyName))
-                    {
-                        displayList.Insert(0, target.PropertyName);
-                        valueList.Insert(0, target.PropertyName);
-                    }
-
-                    int idx    = Mathf.Max(0, valueList.IndexOf(target.PropertyName));
-                    int newIdx = EditorGUILayout.Popup("Property", idx, displayList.ToArray());
-
-                    // セパレーターが選択された場合は変更しない
-                    if (valueList[newIdx] != null)
-                        target.PropertyName = valueList[newIdx];
-
-                    return;
-                }
-            }
-
-            // フォールバック: Renderer 未選択またはシェーダー情報なし
-            EditorGUILayout.BeginHorizontal();
-            target.PropertyName = EditorGUILayout.TextField("Property", target.PropertyName);
-            if (GUILayout.Button("自動検出", GUILayout.Width(60)) && target.Renderer != null)
-                target.PropertyName =
-                    ShaderPropertyDetector.DetectEmissionProperty(target.Renderer, target.MaterialIndex)
-                    ?? target.PropertyName;
-            EditorGUILayout.EndHorizontal();
-        }
-
-        /// <summary>
-        /// 指定 Renderer/マテリアルのシェーダーから Color 型プロパティ名の一覧を返す。
-        /// </summary>
         private static string[] GetMaterialColorProperties(Renderer renderer, int materialIndex)
         {
             if (renderer == null) return System.Array.Empty<string>();
@@ -720,16 +756,13 @@ namespace LipsyncLight
             if (mat == null || mat.shader == null) return System.Array.Empty<string>();
 
             int count = ShaderUtil.GetPropertyCount(mat.shader);
-            var props = new System.Collections.Generic.List<string>();
+            var props = new List<string>();
             for (int i = 0; i < count; i++)
                 if (ShaderUtil.GetPropertyType(mat.shader, i) == ShaderUtil.ShaderPropertyType.Color)
                     props.Add(ShaderUtil.GetPropertyName(mat.shader, i));
             return props.ToArray();
         }
 
-        /// <summary>
-        /// スライダー（0〜0.3）＋数値フィールド（上限なし）の組み合わせ入力。
-        /// </summary>
         private static float DurationField(string label, float value)
         {
             EditorGUILayout.BeginHorizontal();
@@ -738,7 +771,6 @@ namespace LipsyncLight
             float newSlider = GUILayout.HorizontalSlider(clamped, 0f, 0.3f, GUILayout.ExpandWidth(true));
             float newField  = Mathf.Max(0f, EditorGUILayout.FloatField(value, GUILayout.Width(55)));
             EditorGUILayout.EndHorizontal();
-            // スライダーが動いた場合はその値を優先、そうでなければフィールドの値を使用
             if (Mathf.Abs(newSlider - clamped) > 0.0001f)
                 return newSlider;
             return newField;
