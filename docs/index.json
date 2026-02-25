@@ -5,6 +5,26 @@
   "packages": {
     "com.lipsync-light": {
       "versions": {
+        "2.0.0": {
+          "name": "com.lipsync-light",
+          "version": "2.0.0",
+          "displayName": "LipSync Light",
+          "description": "リップシンクに連動してマテリアルのエミッションを制御する Animator 設定を自動生成する Unity Editor 拡張です。",
+          "unity": "2022.3",
+          "type": "tool",
+          "author": {
+            "name": "iori9973",
+            "url": "https://github.com/iori9973"
+          },
+          "url": "https://github.com/iori9973/lipsync-light/releases/download/v2.0.0/lipsync-light-2.0.0.zip",
+          "changelogUrl": "https://github.com/iori9973/lipsync-light/blob/main/CHANGELOG.md",
+          "dependencies": {},
+          "vpmDependencies": {
+            "com.vrchat.avatars": ">=3.5.0",
+            "nadena.dev.modular-avatar": ">=1.10.0"
+          },
+          "zipSHA256": "70e13cf9dc7f45b168557dbcc522af92313f28c11dc849cd13d4c86eb77fc262"
+        },
         "1.0.1": {
           "name": "com.lipsync-light",
           "version": "1.0.1",
@@ -20,7 +40,8 @@
           "changelogUrl": "https://github.com/iori9973/lipsync-light/blob/main/CHANGELOG.md",
           "dependencies": {},
           "vpmDependencies": {
-            "com.vrchat.avatars": ">=3.5.0"
+            "com.vrchat.avatars": ">=3.5.0",
+            "nadena.dev.modular-avatar": ">=1.10.0"
           },
           "zipSHA256": "d420c0dbf9cfec868ad7986d7f78f46ac6454c7cc75cbe3e197dcc0a51710233"
         },
@@ -39,7 +60,8 @@
           "changelogUrl": "https://github.com/iori9973/lipsync-light/blob/main/CHANGELOG.md",
           "dependencies": {},
           "vpmDependencies": {
-            "com.vrchat.avatars": ">=3.5.0"
+            "com.vrchat.avatars": ">=3.5.0",
+            "nadena.dev.modular-avatar": ">=1.10.0"
           },
           "zipSHA256": "bfd318a79b09fc5dee88f5af5f654e9f88fb0173b54f638ecf7bf6f8976ca8df"
         }
