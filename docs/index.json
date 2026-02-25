@@ -1,0 +1,10 @@
+{
+  "name": "LipSync Light Packages",
+  "author": "iori9973",
+  "url": "https://iori9973.github.io/lipsync-light/index.json",
+  "packages": {
+    "com.lipsync-light": {
+      "versions": {}
+    }
+  }
+}
