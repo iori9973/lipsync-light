@@ -16,6 +16,10 @@ namespace LipsyncLight
         [SerializeField] private List<bool> _visemeFoldouts       = new List<bool>();
         [SerializeField] private List<bool> _groupVisemeFoldouts  = new List<bool>();
 
+        // セクションの開閉状態（domain reload 後も保持）
+        [SerializeField] private bool _targetsFoldout      = true;   // 最初から開く
+        [SerializeField] private bool _colorGroupsFoldout  = false;  // 最初は閉じる
+
         private Vector2 _scrollPos;
 
         // コピー&ペースト用クリップボード（セッション中のみ保持）
@@ -130,17 +134,23 @@ namespace LipsyncLight
             }
 
             // Targets
-            DrawSectionHeader("ターゲット");
-            DrawTargetList();
-            if (GUILayout.Button("+ ターゲットを追加"))
-                AddTarget();
+            _targetsFoldout = EditorGUILayout.Foldout(_targetsFoldout, "ターゲット", true, EditorStyles.boldLabel);
+            if (_targetsFoldout)
+            {
+                DrawTargetList();
+                if (GUILayout.Button("+ ターゲットを追加"))
+                    AddTarget();
+            }
             EditorGUILayout.Space(8);
 
             // Color Groups
-            DrawSectionHeader("カラーグループ");
-            DrawColorGroupList();
-            if (GUILayout.Button("+ グループを追加"))
-                AddColorGroup();
+            _colorGroupsFoldout = EditorGUILayout.Foldout(_colorGroupsFoldout, "カラーグループ", true, EditorStyles.boldLabel);
+            if (_colorGroupsFoldout)
+            {
+                DrawColorGroupList();
+                if (GUILayout.Button("+ グループを追加"))
+                    AddColorGroup();
+            }
             EditorGUILayout.Space(12);
 
             // Validation
@@ -638,6 +648,11 @@ namespace LipsyncLight
             try
             {
                 LipsyncLightBuilder.Build(_setup);
+                EditorUtility.DisplayDialog(
+                    "LipSync Light",
+                    "セットアップが完了しました！\n\nアバターを VRChat にアップロードすると、" +
+                    "リップシンクに連動して発光するようになります。",
+                    "OK");
             }
             catch (System.Exception ex)
             {
@@ -719,6 +734,12 @@ namespace LipsyncLight
             go.transform.SetParent(_avatarRoot.transform, false);
             _setup = Undo.AddComponent<LipsyncLightSetup>(go);
             _setup.ColorGroups.Add(new ColorGroup { Name = "グループ 1" });
+            // デフォルトでターゲットを1件追加し、グループ 1 を割り当て
+            _setup.Targets.Add(new EmissionTarget
+            {
+                VoiceColorGroupIndex  = 0,
+                VisemeColorGroupIndex = 0,
+            });
             EditorUtility.SetDirty(_setup);
         }
 
