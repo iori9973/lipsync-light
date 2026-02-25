@@ -1,15 +1,17 @@
 using System.Collections.Generic;
 using UnityEngine;
+using VRC.SDKBase;
 
 namespace LipsyncLight
 {
     /// <summary>
     /// アバターの Hierarchy 配下に配置されるセットアップコンポーネント。
     /// LipSync Light の設定を保持し、Modular Avatar 経由で FX に適用する。
+    /// IEditorOnly を実装することで VRChat SDK にエディター専用コンポーネントとして認識させる。
     /// </summary>
     [DisallowMultipleComponent]
     [AddComponentMenu("LipSync Light/LipSync Light Setup")]
-    public class LipsyncLightSetup : MonoBehaviour
+    public class LipsyncLightSetup : MonoBehaviour, IEditorOnly
     {
         public LipsyncMode Mode = LipsyncMode.Voice;
 

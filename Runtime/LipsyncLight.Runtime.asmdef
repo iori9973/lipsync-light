@@ -1,7 +1,7 @@
 {
     "name": "LipsyncLight.Runtime",
     "rootNamespace": "LipsyncLight",
-    "references": [],
+    "references": ["VRC.SDKBase"],
     "includePlatforms": [],
     "excludePlatforms": [],
     "allowUnsafeCode": false,

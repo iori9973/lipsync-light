@@ -4,6 +4,16 @@ using System;
 using UnityEngine;
 using UnityEditor.Animations;
 
+namespace VRC.SDKBase
+{
+    /// <summary>
+    /// VRChat SDK のエディター専用コンポーネントマーカー。
+    /// このインターフェースを実装したコンポーネントはビルド時に適切に処理され、
+    /// 「will be removed by the client」警告が抑制される。
+    /// </summary>
+    public interface IEditorOnly { }
+}
+
 namespace VRC.SDK3.Avatars.Components
 {
     public class VRCAvatarDescriptor : Behaviour

@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.0.2] - 2026-02-25
+
+### Fixed
+- `LipsyncLightSetup` コンポーネントに対して VRChat SDK が「will be removed by the client」警告を出す問題を修正
+  - `IEditorOnly` インターフェースを実装し、エディター専用コンポーネントとして正しく認識させた
+
 ## [2.0.1] - 2026-02-25
 
 ### Added
