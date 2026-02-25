@@ -18,6 +18,14 @@ namespace LipsyncLight
         private static (Color off, Color on)? s_voiceColorClipboard;
         private static Color[]?              s_visemeColorClipboard;
 
+        // 発光に関係する既知のプロパティ（日本語表示名付き）
+        private static readonly (string prop, string display)[] KnownEmissionProperties =
+        {
+            ("_EmissionColor",      "発光色 (_EmissionColor)"),
+            ("_EmissionColor2",     "発光色 2 (_EmissionColor2)"),
+            ("_2nd_EmissionColor",  "発光色 2 (_2nd_EmissionColor)"),
+        };
+
         private static readonly string[] VisemeNames =
         {
             "0: sil（無音）",
@@ -614,22 +622,73 @@ namespace LipsyncLight
 
         /// <summary>
         /// Renderer が選択されていればシェーダーの Color プロパティをドロップダウンで表示。
+        /// 発光関連プロパティを先頭に日本語付きで、その他は区切り線の後に表示する。
         /// 未選択時は自由入力テキストフィールドにフォールバック。
         /// </summary>
         private static void DrawPropertyField(EmissionTarget target)
         {
             if (target.Renderer != null)
             {
-                var props = GetMaterialColorProperties(target.Renderer, target.MaterialIndex);
-                if (props.Length > 0)
+                var allProps = GetMaterialColorProperties(target.Renderer, target.MaterialIndex);
+                if (allProps.Length > 0)
                 {
-                    var options = new System.Collections.Generic.List<string>(props);
-                    // 現在の値がリストにない場合は先頭に追加
-                    if (!string.IsNullOrEmpty(target.PropertyName) && !options.Contains(target.PropertyName))
-                        options.Insert(0, target.PropertyName);
+                    var displayList = new List<string>();
+                    var valueList   = new List<string>(); // null = セパレーター
 
-                    int idx = Mathf.Max(0, options.IndexOf(target.PropertyName));
-                    target.PropertyName = options[EditorGUILayout.Popup("Property", idx, options.ToArray())];
+                    // 1. 既知の発光プロパティを先頭に日本語付きで追加
+                    bool hasEmission = false;
+                    foreach (var (prop, display) in KnownEmissionProperties)
+                    {
+                        foreach (var p in allProps)
+                        {
+                            if (p == prop)
+                            {
+                                displayList.Add(display);
+                                valueList.Add(prop);
+                                hasEmission = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    // 2. その他の Color プロパティを区切り線の後に追加
+                    var otherProps = new List<string>();
+                    foreach (var p in allProps)
+                    {
+                        bool isKnown = false;
+                        foreach (var (known, _) in KnownEmissionProperties)
+                            if (p == known) { isKnown = true; break; }
+                        if (!isKnown) otherProps.Add(p);
+                    }
+
+                    if (otherProps.Count > 0)
+                    {
+                        if (hasEmission)
+                        {
+                            displayList.Add("── その他のカラー ──");
+                            valueList.Add(null);
+                        }
+                        foreach (var p in otherProps)
+                        {
+                            displayList.Add(p);
+                            valueList.Add(p);
+                        }
+                    }
+
+                    // 3. 現在の値がリストにない場合は先頭に追加
+                    if (!string.IsNullOrEmpty(target.PropertyName) && !valueList.Contains(target.PropertyName))
+                    {
+                        displayList.Insert(0, target.PropertyName);
+                        valueList.Insert(0, target.PropertyName);
+                    }
+
+                    int idx    = Mathf.Max(0, valueList.IndexOf(target.PropertyName));
+                    int newIdx = EditorGUILayout.Popup("Property", idx, displayList.ToArray());
+
+                    // セパレーターが選択された場合は変更しない
+                    if (valueList[newIdx] != null)
+                        target.PropertyName = valueList[newIdx];
+
                     return;
                 }
             }
