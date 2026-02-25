@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using UnityEditor;
 using UnityEngine;
@@ -142,15 +141,6 @@ namespace LipsyncLight
             DrawColorGroupList();
             if (GUILayout.Button("+ グループを追加"))
                 AddColorGroup();
-            EditorGUILayout.Space(8);
-
-            // Output path
-            DrawSectionHeader("出力先");
-            EditorGUILayout.BeginHorizontal();
-            EditorGUILayout.LabelField(_setup.OutputPath, EditorStyles.textField, GUILayout.ExpandWidth(true));
-            if (GUILayout.Button("変更", GUILayout.Width(50)))
-                ChooseOutputPath();
-            EditorGUILayout.EndHorizontal();
             EditorGUILayout.Space(12);
 
             // Validation
@@ -488,12 +478,13 @@ namespace LipsyncLight
                 int gIdx = target.VoiceColorGroupIndex;
                 if (gIdx < _setup.ColorGroups.Count)
                 {
-                    EditorGUI.BeginDisabledGroup(true);
+                    var group = _setup.ColorGroups[gIdx];
                     EditorGUILayout.BeginHorizontal();
-                    EditorGUILayout.ColorField("消灯", _setup.ColorGroups[gIdx].OffColor);
-                    EditorGUILayout.ColorField("点灯", _setup.ColorGroups[gIdx].OnColor);
+                    var newOff = EditorGUILayout.ColorField("消灯", group.OffColor);
+                    var newOn  = EditorGUILayout.ColorField("点灯", group.OnColor);
                     EditorGUILayout.EndHorizontal();
-                    EditorGUI.EndDisabledGroup();
+                    if (newOff != group.OffColor) { group.OffColor = newOff; SaveSetup(); }
+                    if (newOn  != group.OnColor)  { group.OnColor  = newOn;  SaveSetup(); }
                 }
             }
         }
@@ -549,16 +540,18 @@ namespace LipsyncLight
             {
                 int gIdx = target.VisemeColorGroupIndex;
                 _visemeFoldouts[targetIndex] = EditorGUILayout.Foldout(
-                    _visemeFoldouts[targetIndex], "Viseme カラー詳細（グループを表示中）", true);
+                    _visemeFoldouts[targetIndex], "Viseme カラー詳細（グループ）", true);
                 if (_visemeFoldouts[targetIndex] && gIdx < _setup.ColorGroups.Count)
                 {
-                    EditorGUI.BeginDisabledGroup(true);
-                    EditorGUI.indentLevel++;
                     var grp = _setup.ColorGroups[gIdx];
+                    grp.TransitionDuration = DurationField("切り替え時間 (秒)", grp.TransitionDuration);
+                    EditorGUI.indentLevel++;
                     for (int v = 0; v < 15; v++)
-                        EditorGUILayout.ColorField(VisemeNames[v], grp.VisemeColors[v]);
+                    {
+                        var newColor = EditorGUILayout.ColorField(VisemeNames[v], grp.VisemeColors[v]);
+                        if (newColor != grp.VisemeColors[v]) { grp.VisemeColors[v] = newColor; SaveSetup(); }
+                    }
                     EditorGUI.indentLevel--;
-                    EditorGUI.EndDisabledGroup();
                 }
             }
         }
@@ -629,7 +622,14 @@ namespace LipsyncLight
         private void AddTarget()
         {
             if (_setup.Targets == null) _setup.Targets = new List<EmissionTarget>();
-            _setup.Targets.Add(new EmissionTarget());
+            var t = new EmissionTarget();
+            // カラーグループが1つ以上あれば、新規ターゲットはグループ 1 をデフォルトで使用
+            if (_setup.ColorGroups != null && _setup.ColorGroups.Count > 0)
+            {
+                t.VoiceColorGroupIndex  = 0;
+                t.VisemeColorGroupIndex = 0;
+            }
+            _setup.Targets.Add(t);
             SaveSetup();
         }
 
@@ -662,21 +662,6 @@ namespace LipsyncLight
             {
                 EditorUtility.DisplayDialog("LipSync Light エラー", ex.Message, "OK");
             }
-        }
-
-        private void ChooseOutputPath()
-        {
-            string current = string.IsNullOrEmpty(_setup.OutputPath)
-                ? Application.dataPath
-                : Path.GetFullPath(_setup.OutputPath);
-
-            string chosen = EditorUtility.SaveFolderPanel("出力フォルダの選択", current, "");
-            if (string.IsNullOrEmpty(chosen)) return;
-
-            if (chosen.StartsWith(Application.dataPath))
-                _setup.OutputPath = "Assets" + chosen[Application.dataPath.Length..];
-            else
-                EditorUtility.DisplayDialog("LipSync Light", "Assets フォルダ内を選択してください。", "OK");
         }
 
         // ---------------------------------------------------------------

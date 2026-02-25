@@ -29,11 +29,12 @@ namespace LipsyncLight
                 throw new InvalidOperationException("ターゲットが1つも設定されていません。");
 
             var avatarRoot = FindAvatarRoot(setup);
+            string outputPath = DeriveOutputPath(avatarRoot);
 
-            EnsureFolder(setup.OutputPath);
-            EnsureFolder(setup.OutputPath + "/Animations");
+            EnsureFolder(outputPath);
+            EnsureFolder(outputPath + "/Animations");
 
-            var controller = CreateOrUpdateController(setup, avatarRoot);
+            var controller = CreateOrUpdateController(setup, avatarRoot, outputPath);
 
             SetupMaMergeAnimator(setup.gameObject, controller);
 
@@ -48,9 +49,9 @@ namespace LipsyncLight
         // ---------------------------------------------------------------
 
         private static AnimatorController CreateOrUpdateController(
-            LipsyncLightSetup setup, GameObject avatarRoot)
+            LipsyncLightSetup setup, GameObject avatarRoot, string outputPath)
         {
-            string controllerPath = setup.OutputPath + "/" + FxControllerFileName;
+            string controllerPath = outputPath + "/" + FxControllerFileName;
 
             var controller = AssetDatabase.LoadAssetAtPath<AnimatorController>(controllerPath);
             if (controller == null)
@@ -68,8 +69,8 @@ namespace LipsyncLight
                     avatarRoot, setup.Targets,
                     t => t.GetOnColor(setup.ColorGroups) * setup.IntensityMultiplier, "LipSyncLight_On");
 
-                SaveClip(offClip, setup.OutputPath + "/Animations/LipSyncLight_Off.anim");
-                SaveClip(onClip,  setup.OutputPath + "/Animations/LipSyncLight_On.anim");
+                SaveClip(offClip, outputPath + "/Animations/LipSyncLight_Off.anim");
+                SaveClip(onClip,  outputPath + "/Animations/LipSyncLight_On.anim");
                 BuildVoiceLayer(controller, offClip, onClip,
                     setup.VoiceThreshold, setup.VoiceFadeTime, setup.AdditiveBlending);
             }
@@ -84,7 +85,7 @@ namespace LipsyncLight
                         avatarRoot, setup.Targets,
                         t => t.GetVisemeColor(setup.ColorGroups, idx),
                         $"LipSyncLight_Viseme_{i}");
-                    SaveClip(clips[i], $"{setup.OutputPath}/Animations/LipSyncLight_Viseme_{i}.anim");
+                    SaveClip(clips[i], $"{outputPath}/Animations/LipSyncLight_Viseme_{i}.anim");
                 }
                 BuildVisemeLayer(setup, controller, clips, setup.AdditiveBlending);
             }
@@ -311,10 +312,14 @@ namespace LipsyncLight
             if (merge != null)
                 UnityEngine.Object.DestroyImmediate(merge);
 
-            string controllerPath = setup.OutputPath + "/" + FxControllerFileName;
+            string outputPath;
+            try   { outputPath = DeriveOutputPath(FindAvatarRoot(setup)); }
+            catch { outputPath = "Assets/LipSyncLight"; }
+
+            string controllerPath = outputPath + "/" + FxControllerFileName;
             AssetDatabase.DeleteAsset(controllerPath);
 
-            string animDir = setup.OutputPath + "/Animations";
+            string animDir = outputPath + "/Animations";
             AssetDatabase.DeleteAsset(animDir + "/LipSyncLight_Off.anim");
             AssetDatabase.DeleteAsset(animDir + "/LipSyncLight_On.anim");
             for (int i = 0; i < 15; i++)
@@ -328,6 +333,13 @@ namespace LipsyncLight
         // ---------------------------------------------------------------
         // Helpers
         // ---------------------------------------------------------------
+
+        /// <summary>
+        /// アバタールートの名前から出力先パスを自動決定する。
+        /// 複数アバターで使っても干渉しないようにアバター名をサブフォルダにする。
+        /// </summary>
+        private static string DeriveOutputPath(GameObject avatarRoot)
+            => $"Assets/LipSyncLight/{avatarRoot.name}";
 
         private static GameObject FindAvatarRoot(LipsyncLightSetup setup)
         {

@@ -25,6 +25,5 @@ namespace LipsyncLight
 
         public List<ColorGroup> ColorGroups = new List<ColorGroup>();
         public List<EmissionTarget> Targets = new List<EmissionTarget>();
-        public string OutputPath = "Assets/LipSyncLight";
     }
 }
