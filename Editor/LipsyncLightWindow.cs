@@ -57,6 +57,11 @@ namespace LipsyncLight
             _config = AssetDatabase.LoadAssetAtPath<LipsyncLightConfig>(ConfigAssetPath);
         }
 
+        private void OnDisable()
+        {
+            SaveConfig();
+        }
+
         private void OnGUI()
         {
             EnsureConfig();
