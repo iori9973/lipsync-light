@@ -343,6 +343,7 @@ namespace UnityEditor
 
         public static int GetPropertyCount(UnityEngine.Shader shader) => 0;
         public static string GetPropertyName(UnityEngine.Shader shader, int idx) => "";
+        public static string GetPropertyDescription(UnityEngine.Shader shader, int idx) => "";
         public static ShaderPropertyType GetPropertyType(UnityEngine.Shader shader, int idx)
             => ShaderPropertyType.Float;
     }

@@ -17,21 +17,18 @@ namespace LipsyncLight
         [SerializeField] private List<bool> _visemeFoldouts       = new List<bool>();
         [SerializeField] private List<bool> _groupVisemeFoldouts  = new List<bool>();
 
-        // 手動プロパティ入力用（ターゲットインデックス → 入力中の文字列）
-        private readonly Dictionary<int, string> _propertyInputs = new Dictionary<int, string>();
-
         private Vector2 _scrollPos;
 
         // コピー&ペースト用クリップボード（セッション中のみ保持）
         private static (Color off, Color on)? s_voiceColorClipboard;
         private static Color[]?              s_visemeColorClipboard;
 
-        // 発光に関係する既知のプロパティ（日本語表示名付き）
-        private static readonly (string prop, string display)[] KnownEmissionProperties =
+        // 既知の発光プロパティ名（表示名はシェーダーの GetPropertyDescription を使用）
+        private static readonly string[] s_knownEmissionPropNames =
         {
-            ("_EmissionColor",      "発光色 (_EmissionColor)"),
-            ("_EmissionColor2",     "発光色 2 (_EmissionColor2)"),
-            ("_2nd_EmissionColor",  "発光色 2 (_2nd_EmissionColor)"),
+            "_EmissionColor",
+            "_EmissionColor2",
+            "_2nd_EmissionColor",
         };
 
         private static readonly string[] VisemeNames =
@@ -379,45 +376,66 @@ namespace LipsyncLight
 
             if (target.Renderer != null)
             {
-                var shaderProps = GetMaterialColorProperties(target.Renderer, target.MaterialIndex);
+                var allProps    = GetMaterialColorPropertiesWithDesc(target.Renderer, target.MaterialIndex);
+                var propDescMap = allProps.ToDictionary(x => x.name, x => x.desc);
 
-                // 1. 既知の発光プロパティ（日本語ラベル付き）
-                foreach (var (prop, display) in KnownEmissionProperties)
+                // 1. 既知の発光プロパティ（シェーダーの説明文でラベル表示）
+                foreach (var propName in s_knownEmissionPropNames)
                 {
-                    if (!shaderProps.Contains(prop)) continue;
-                    bool on    = target.PropertyNames.Contains(prop);
-                    bool newOn = EditorGUILayout.ToggleLeft(display, on);
-                    if (newOn && !on) target.PropertyNames.Add(prop);
-                    else if (!newOn && on) target.PropertyNames.Remove(prop);
+                    if (!propDescMap.TryGetValue(propName, out var desc)) continue;
+                    bool on    = target.PropertyNames.Contains(propName);
+                    bool newOn = EditorGUILayout.ToggleLeft(FormatPropLabel(propName, desc), on);
+                    if (newOn && !on) target.PropertyNames.Add(propName);
+                    else if (!newOn && on) target.PropertyNames.Remove(propName);
                 }
 
                 // 2. 名前に "emission" を含むその他のプロパティ
-                foreach (var p in shaderProps)
+                foreach (var (name, desc) in allProps)
                 {
-                    bool isKnown = KnownEmissionProperties.Any(kep => kep.prop == p);
-                    if (isKnown) continue;
-                    if (p.IndexOf("emission", System.StringComparison.OrdinalIgnoreCase) < 0) continue;
-
-                    bool on    = target.PropertyNames.Contains(p);
-                    bool newOn = EditorGUILayout.ToggleLeft(p, on);
-                    if (newOn && !on) target.PropertyNames.Add(p);
-                    else if (!newOn && on) target.PropertyNames.Remove(p);
+                    if (s_knownEmissionPropNames.Contains(name)) continue;
+                    if (name.IndexOf("emission", System.StringComparison.OrdinalIgnoreCase) < 0) continue;
+                    bool on    = target.PropertyNames.Contains(name);
+                    bool newOn = EditorGUILayout.ToggleLeft(FormatPropLabel(name, desc), on);
+                    if (newOn && !on) target.PropertyNames.Add(name);
+                    else if (!newOn && on) target.PropertyNames.Remove(name);
                 }
 
-                // 3. シェーダーに存在しない手動追加プロパティの表示
+                // 3. シェーダーに存在しない手動追加プロパティ（× で削除のみ可能）
                 foreach (var mp in target.PropertyNames.ToList())
                 {
-                    if (shaderProps.Contains(mp)) continue;
+                    if (propDescMap.ContainsKey(mp)) continue;
                     EditorGUILayout.BeginHorizontal();
                     EditorGUILayout.LabelField(mp, GUILayout.ExpandWidth(true));
                     if (GUILayout.Button("×", GUILayout.Width(22)))
                         target.PropertyNames.Remove(mp);
                     EditorGUILayout.EndHorizontal();
+                }
+
+                // 4. 発光以外のプロパティをドロップダウンで追加
+                var remaining = allProps
+                    .Where(x => !IsEmissionProp(x.name) && !target.PropertyNames.Contains(x.name))
+                    .ToArray();
+
+                if (remaining.Length > 0)
+                {
+                    var labels = new[] { "（追加するプロパティを選択）" }
+                        .Concat(remaining.Select(x => FormatPropLabel(x.name, x.desc)))
+                        .ToArray();
+                    int sel = EditorGUILayout.Popup("その他のプロパティを追加", 0, labels);
+                    if (sel > 0)
+                    {
+                        var toAdd = remaining[sel - 1].name;
+                        if (!target.PropertyNames.Contains(toAdd))
+                        {
+                            target.PropertyNames.Add(toAdd);
+                            SaveSetup();
+                        }
+                    }
                 }
             }
             else
             {
-                // Renderer 未選択時は PropertyNames を直接表示
+                // Renderer 未選択時は PropertyNames を直接表示（削除のみ可能）
                 foreach (var mp in target.PropertyNames.ToList())
                 {
                     EditorGUILayout.BeginHorizontal();
@@ -427,24 +445,6 @@ namespace LipsyncLight
                     EditorGUILayout.EndHorizontal();
                 }
             }
-
-            // 手動追加フィールド
-            if (!_propertyInputs.ContainsKey(targetIndex))
-                _propertyInputs[targetIndex] = "";
-
-            EditorGUILayout.BeginHorizontal();
-            _propertyInputs[targetIndex] = EditorGUILayout.TextField(_propertyInputs[targetIndex]);
-            if (GUILayout.Button("追加", GUILayout.Width(44)))
-            {
-                var input = _propertyInputs[targetIndex].Trim();
-                if (!string.IsNullOrEmpty(input) && !target.PropertyNames.Contains(input))
-                {
-                    target.PropertyNames.Add(input);
-                    _propertyInputs[targetIndex] = "";
-                    SaveSetup();
-                }
-            }
-            EditorGUILayout.EndHorizontal();
 
             EditorGUI.indentLevel--;
         }
@@ -747,21 +747,52 @@ namespace LipsyncLight
         // UI helpers
         // ---------------------------------------------------------------
 
-        private static string[] GetMaterialColorProperties(Renderer renderer, int materialIndex)
+        /// <summary>
+        /// シェーダーの Color プロパティ名と説明文の一覧を返す。
+        /// 説明文は ShaderUtil.GetPropertyDescription（シェーダー定義の表示名）を使用するため、
+        /// lilToon など日本語対応シェーダーでは日本語ラベルが得られる。
+        /// </summary>
+        private static (string name, string desc)[] GetMaterialColorPropertiesWithDesc(
+            Renderer renderer, int materialIndex)
         {
-            if (renderer == null) return System.Array.Empty<string>();
+            if (renderer == null) return System.Array.Empty<(string, string)>();
             var mats = renderer.sharedMaterials;
-            if (materialIndex < 0 || materialIndex >= mats.Length) return System.Array.Empty<string>();
+            if (materialIndex < 0 || materialIndex >= mats.Length)
+                return System.Array.Empty<(string, string)>();
             var mat = mats[materialIndex];
-            if (mat == null || mat.shader == null) return System.Array.Empty<string>();
+            if (mat == null || mat.shader == null) return System.Array.Empty<(string, string)>();
 
             int count = ShaderUtil.GetPropertyCount(mat.shader);
-            var props = new List<string>();
+            var props = new List<(string name, string desc)>();
             for (int i = 0; i < count; i++)
-                if (ShaderUtil.GetPropertyType(mat.shader, i) == ShaderUtil.ShaderPropertyType.Color)
-                    props.Add(ShaderUtil.GetPropertyName(mat.shader, i));
+            {
+                if (ShaderUtil.GetPropertyType(mat.shader, i) != ShaderUtil.ShaderPropertyType.Color)
+                    continue;
+                string name = ShaderUtil.GetPropertyName(mat.shader, i);
+                string desc = ShaderUtil.GetPropertyDescription(mat.shader, i);
+                props.Add((name, desc));
+            }
             return props.ToArray();
         }
+
+        /// <summary>
+        /// プロパティ名と説明文から UI 表示ラベルを生成する。
+        /// 説明文がプロパティ名と異なる場合：「説明文 (プロパティ名)」
+        /// 同じまたは空の場合：「プロパティ名」のみ
+        /// </summary>
+        private static string FormatPropLabel(string propName, string desc)
+        {
+            if (!string.IsNullOrEmpty(desc) && desc != propName)
+                return $"{desc} ({propName})";
+            return propName;
+        }
+
+        /// <summary>
+        /// 発光関連プロパティかどうかを判定する（既知リスト or 名前に "emission" を含む）。
+        /// </summary>
+        private static bool IsEmissionProp(string propName)
+            => s_knownEmissionPropNames.Contains(propName)
+               || propName.IndexOf("emission", System.StringComparison.OrdinalIgnoreCase) >= 0;
 
         private static float DurationField(string label, float value)
         {
