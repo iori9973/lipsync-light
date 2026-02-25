@@ -18,7 +18,7 @@ namespace LipsyncLight
 
         // セクションの開閉状態（domain reload 後も保持）
         [SerializeField] private bool _targetsFoldout      = true;   // 最初から開く
-        [SerializeField] private bool _colorGroupsFoldout  = false;  // 最初は閉じる
+        [SerializeField] private bool _colorGroupsFoldout  = true;   // 最初から開く
 
         private Vector2 _scrollPos;
 
@@ -349,13 +349,10 @@ namespace LipsyncLight
                 // Property name（複数チェックボックス）
                 DrawPropertyField(target, i);
 
-                // Voice カラー設定
-                if (_setup.Mode == LipsyncMode.Voice || _setup.Mode == LipsyncMode.Both)
-                    DrawTargetVoiceColor(target, i);
-
-                // Viseme カラー設定
-                if (_setup.Mode == LipsyncMode.Viseme || _setup.Mode == LipsyncMode.Both)
-                    DrawTargetVisemeColor(target, i);
+                // カラー設定（モード別）
+                if      (_setup.Mode == LipsyncMode.Voice)   DrawTargetVoiceColor(target, i);
+                else if (_setup.Mode == LipsyncMode.Viseme)  DrawTargetVisemeColor(target, i);
+                else if (_setup.Mode == LipsyncMode.Both)    DrawTargetBothColor(target, i);
 
                 // グループとして保存ボタン
                 bool canSaveVoice  = (_setup.Mode != LipsyncMode.Viseme) && target.VoiceColorGroupIndex  < 0;
@@ -483,7 +480,7 @@ namespace LipsyncLight
             int currentPopup = ResolveGroupPopup(groupOptions, target.VoiceColorGroupIndex);
             if (currentPopup < 0) { currentPopup = 0; target.VoiceColorGroupIndex = -1; }
 
-            int newPopup = EditorGUILayout.Popup("消灯/点灯カラー", currentPopup, GetGroupLabels(groupOptions));
+            int newPopup = EditorGUILayout.Popup("カラーグループ", currentPopup, GetGroupLabels(groupOptions));
             target.VoiceColorGroupIndex = groupOptions[newPopup].groupIdx;
 
             if (target.VoiceColorGroupIndex < 0)
@@ -533,7 +530,7 @@ namespace LipsyncLight
             int currentPopup = ResolveGroupPopup(groupOptions, target.VisemeColorGroupIndex);
             if (currentPopup < 0) { currentPopup = 0; target.VisemeColorGroupIndex = -1; }
 
-            int newPopup = EditorGUILayout.Popup("Viseme カラー", currentPopup, GetGroupLabels(groupOptions));
+            int newPopup = EditorGUILayout.Popup("カラーグループ", currentPopup, GetGroupLabels(groupOptions));
             target.VisemeColorGroupIndex = groupOptions[newPopup].groupIdx;
 
             while (_visemeFoldouts.Count <= targetIndex)
@@ -542,7 +539,7 @@ namespace LipsyncLight
             if (target.VisemeColorGroupIndex < 0)
             {
                 _visemeFoldouts[targetIndex] = EditorGUILayout.Foldout(
-                    _visemeFoldouts[targetIndex], "Viseme カラー詳細", true);
+                    _visemeFoldouts[targetIndex], "カラー詳細", true);
                 if (_visemeFoldouts[targetIndex])
                 {
                     target.TransitionDuration = DurationField("切り替え時間 (秒)", target.TransitionDuration);
@@ -574,7 +571,7 @@ namespace LipsyncLight
             {
                 int gIdx = target.VisemeColorGroupIndex;
                 _visemeFoldouts[targetIndex] = EditorGUILayout.Foldout(
-                    _visemeFoldouts[targetIndex], "Viseme カラー詳細（グループ）", true);
+                    _visemeFoldouts[targetIndex], "カラー詳細", true);
                 if (_visemeFoldouts[targetIndex] && gIdx < _setup.ColorGroups.Count)
                 {
                     var grp = _setup.ColorGroups[gIdx];
@@ -586,6 +583,111 @@ namespace LipsyncLight
                         if (newColor != grp.VisemeColors[v]) { grp.VisemeColors[v] = newColor; SaveSetup(); }
                     }
                     EditorGUI.indentLevel--;
+                }
+            }
+        }
+
+        // ---------------------------------------------------------------
+        // Target Both カラー設定（Voice + Viseme を1つの UI に統合）
+        // ---------------------------------------------------------------
+
+        private void DrawTargetBothColor(EmissionTarget target, int targetIndex)
+        {
+            while (_visemeFoldouts.Count <= targetIndex) _visemeFoldouts.Add(false);
+
+            var groupOptions = BuildGroupOptions();
+            // VoiceColorGroupIndex を代表として使い、変更時は両方を同期する
+            int currentPopup = ResolveGroupPopup(groupOptions, target.VoiceColorGroupIndex);
+            if (currentPopup < 0) currentPopup = 0;
+
+            int newPopup    = EditorGUILayout.Popup("カラーグループ", currentPopup, GetGroupLabels(groupOptions));
+            int newGroupIdx = groupOptions[newPopup].groupIdx;
+            if (newGroupIdx != target.VoiceColorGroupIndex || newGroupIdx != target.VisemeColorGroupIndex)
+            {
+                target.VoiceColorGroupIndex  = newGroupIdx;
+                target.VisemeColorGroupIndex = newGroupIdx;
+                SaveSetup();
+            }
+
+            if (newGroupIdx < 0)
+            {
+                // --- 独自設定: 消灯/点灯 ---
+                EditorGUILayout.BeginHorizontal();
+                if (GUILayout.Button("コピー", GUILayout.Width(52)))
+                    s_voiceColorClipboard = (target.OffColor, target.OnColor);
+                using (new EditorGUI.DisabledScope(s_voiceColorClipboard == null))
+                {
+                    if (GUILayout.Button("貼り付け", GUILayout.Width(62)) && s_voiceColorClipboard.HasValue)
+                    {
+                        target.OffColor = s_voiceColorClipboard.Value.off;
+                        target.OnColor  = s_voiceColorClipboard.Value.on;
+                        SaveSetup();
+                    }
+                }
+                EditorGUILayout.EndHorizontal();
+
+                EditorGUILayout.BeginHorizontal();
+                target.OffColor = EditorGUILayout.ColorField("消灯", target.OffColor);
+                target.OnColor  = EditorGUILayout.ColorField("点灯", target.OnColor);
+                EditorGUILayout.EndHorizontal();
+
+                // --- 独自設定: Viseme 詳細 ---
+                _visemeFoldouts[targetIndex] = EditorGUILayout.Foldout(
+                    _visemeFoldouts[targetIndex], "カラー詳細", true);
+                if (_visemeFoldouts[targetIndex])
+                {
+                    target.TransitionDuration = DurationField("切り替え時間 (秒)", target.TransitionDuration);
+
+                    EditorGUILayout.BeginHorizontal();
+                    if (GUILayout.Button("コピー", GUILayout.Width(52)))
+                    {
+                        s_visemeColorClipboard = new Color[15];
+                        target.VisemeColors.CopyTo(s_visemeColorClipboard, 0);
+                    }
+                    using (new EditorGUI.DisabledScope(s_visemeColorClipboard == null))
+                    {
+                        if (GUILayout.Button("貼り付け", GUILayout.Width(62)) && s_visemeColorClipboard != null)
+                        {
+                            s_visemeColorClipboard.CopyTo(target.VisemeColors, 0);
+                            SaveSetup();
+                        }
+                    }
+                    EditorGUILayout.EndHorizontal();
+
+                    EditorGUI.indentLevel++;
+                    for (int v = 0; v < 15; v++)
+                        target.VisemeColors[v] = EditorGUILayout.ColorField(VisemeNames[v], target.VisemeColors[v]);
+                    EditorGUI.indentLevel--;
+                }
+            }
+            else
+            {
+                // --- グループ使用: 消灯/点灯 + Viseme を1度だけ表示 ---
+                int gIdx = newGroupIdx;
+                if (gIdx < _setup.ColorGroups.Count)
+                {
+                    var group = _setup.ColorGroups[gIdx];
+
+                    EditorGUILayout.BeginHorizontal();
+                    var newOff = EditorGUILayout.ColorField("消灯", group.OffColor);
+                    var newOn  = EditorGUILayout.ColorField("点灯", group.OnColor);
+                    EditorGUILayout.EndHorizontal();
+                    if (newOff != group.OffColor) { group.OffColor = newOff; SaveSetup(); }
+                    if (newOn  != group.OnColor)  { group.OnColor  = newOn;  SaveSetup(); }
+
+                    _visemeFoldouts[targetIndex] = EditorGUILayout.Foldout(
+                        _visemeFoldouts[targetIndex], "カラー詳細", true);
+                    if (_visemeFoldouts[targetIndex])
+                    {
+                        group.TransitionDuration = DurationField("切り替え時間 (秒)", group.TransitionDuration);
+                        EditorGUI.indentLevel++;
+                        for (int v = 0; v < 15; v++)
+                        {
+                            var newColor = EditorGUILayout.ColorField(VisemeNames[v], group.VisemeColors[v]);
+                            if (newColor != group.VisemeColors[v]) { group.VisemeColors[v] = newColor; SaveSetup(); }
+                        }
+                        EditorGUI.indentLevel--;
+                    }
                 }
             }
         }
