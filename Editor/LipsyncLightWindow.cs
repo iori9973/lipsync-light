@@ -26,12 +26,21 @@ namespace LipsyncLight
         private static (Color off, Color on)? s_voiceColorClipboard;
         private static Color[]?              s_visemeColorClipboard;
 
-        // 既知の発光プロパティ名（表示名はシェーダーの GetPropertyDescription を使用）
+        // 既知の発光プロパティ名
         private static readonly string[] s_knownEmissionPropNames =
         {
             "_EmissionColor",
             "_EmissionColor2",
             "_2nd_EmissionColor",
+        };
+
+        // 既知プロパティの日本語ラベル（シェーダーの説明文より優先して使用）
+        private static readonly System.Collections.Generic.Dictionary<string, string> s_knownPropJapanese
+            = new System.Collections.Generic.Dictionary<string, string>
+        {
+            ["_EmissionColor"]     = "発光色",
+            ["_EmissionColor2"]    = "発光色 2",
+            ["_2nd_EmissionColor"] = "発光色 2",
         };
 
         private static readonly string[] VisemeNames =
@@ -411,6 +420,14 @@ namespace LipsyncLight
                     EditorGUILayout.EndHorizontal();
                 }
 
+                // 発光プロパティが1件も検出されなかった場合のガイド
+                bool anyEmission = allProps.Any(x => IsEmissionProp(x.name));
+                if (!anyEmission)
+                    EditorGUILayout.HelpBox(
+                        "このシェーダーでは発光プロパティが自動検出されませんでした。\n" +
+                        "「その他のプロパティを追加」から発光制御に使うプロパティを選んでください。",
+                        MessageType.Info);
+
                 // 4. 発光以外のプロパティをドロップダウンで追加
                 var remaining = allProps
                     .Where(x => !IsEmissionProp(x.name) && !target.PropertyNames.Contains(x.name))
@@ -431,6 +448,13 @@ namespace LipsyncLight
                             SaveSetup();
                         }
                     }
+                }
+                else if (!anyEmission)
+                {
+                    // Color プロパティ自体がない（または全選択済み）場合
+                    EditorGUILayout.HelpBox(
+                        "Color 型のプロパティが見つかりません。\nシェーダーやマテリアルインデックスを確認してください。",
+                        MessageType.Warning);
                 }
             }
             else
@@ -783,11 +807,16 @@ namespace LipsyncLight
 
         /// <summary>
         /// プロパティ名と説明文から UI 表示ラベルを生成する。
-        /// 説明文がプロパティ名と異なる場合：「説明文 (プロパティ名)」
-        /// 同じまたは空の場合：「プロパティ名」のみ
+        /// 既知プロパティ → 日本語ラベルを優先。
+        /// それ以外 → シェーダーの説明文（GetPropertyDescription）を使用。
+        /// 説明文がない場合 → プロパティ名のみ。
         /// </summary>
         private static string FormatPropLabel(string propName, string desc)
         {
+            // 既知プロパティは日本語ラベルを優先
+            if (s_knownPropJapanese.TryGetValue(propName, out var jpLabel))
+                return $"{jpLabel} ({propName})";
+            // シェーダーの説明文があればそれを使用（lilToon 等の日本語対応シェーダーに対応）
             if (!string.IsNullOrEmpty(desc) && desc != propName)
                 return $"{desc} ({propName})";
             return propName;
