@@ -22,6 +22,9 @@ namespace LipsyncLight
 
         private Vector2 _scrollPos;
 
+        // プロパティ追加ドロップダウンの選択中インデックス（ターゲットインデックス → 選択値）
+        private readonly Dictionary<int, int> _propertyDropdownIndex = new Dictionary<int, int>();
+
         // コピー&ペースト用クリップボード（セッション中のみ保持）
         private static (Color off, Color on)? s_voiceColorClipboard;
         private static Color[]?              s_visemeColorClipboard;
@@ -425,26 +428,42 @@ namespace LipsyncLight
                         "「その他のプロパティを追加」から発光制御に使うプロパティを選んでください。",
                         MessageType.Info);
 
-                // 4. 発光以外のプロパティをドロップダウンで追加
+                // 4. 発光以外のプロパティをドロップダウン＋追加ボタンで追加
                 var remaining = allProps
                     .Where(x => !IsEmissionProp(x.name) && !target.PropertyNames.Contains(x.name))
                     .ToArray();
 
                 if (remaining.Length > 0)
                 {
-                    var labels = new[] { "（追加するプロパティを選択）" }
+                    if (!_propertyDropdownIndex.ContainsKey(targetIndex))
+                        _propertyDropdownIndex[targetIndex] = 0;
+
+                    var labels = new[] { "（選択してください）" }
                         .Concat(remaining.Select(x => FormatPropLabel(x.name, x.desc)))
                         .ToArray();
-                    int sel = EditorGUILayout.Popup("その他のプロパティを追加", 0, labels);
-                    if (sel > 0)
+
+                    // 選択済みインデックスが範囲外になっていたらリセット
+                    if (_propertyDropdownIndex[targetIndex] >= labels.Length)
+                        _propertyDropdownIndex[targetIndex] = 0;
+
+                    EditorGUILayout.BeginHorizontal();
+                    _propertyDropdownIndex[targetIndex] = EditorGUILayout.Popup(
+                        "その他のプロパティを追加",
+                        _propertyDropdownIndex[targetIndex],
+                        labels);
+                    using (new EditorGUI.DisabledScope(_propertyDropdownIndex[targetIndex] == 0))
                     {
-                        var toAdd = remaining[sel - 1].name;
-                        if (!target.PropertyNames.Contains(toAdd))
+                        if (GUILayout.Button("追加", GUILayout.Width(44)))
                         {
-                            target.PropertyNames.Add(toAdd);
+                            int sel = _propertyDropdownIndex[targetIndex];
+                            var toAdd = remaining[sel - 1].name;
+                            if (!target.PropertyNames.Contains(toAdd))
+                                target.PropertyNames.Add(toAdd);
+                            _propertyDropdownIndex[targetIndex] = 0;
                             SaveSetup();
                         }
                     }
+                    EditorGUILayout.EndHorizontal();
                 }
                 else if (!anyEmission)
                 {
