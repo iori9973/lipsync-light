@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.4] - 2026-02-26
+
+### Fixed
+- MeshRenderer の material index ≥ 1 を対象にしたアニメーションバインディングが正しく適用されない問題を修正
+  - `EditorCurveBinding.FloatCurve()` で手動構築したバインディングが MeshRenderer + `materials[N].` の組み合わせで `customType: 0` になり、ランタイムでアニメーションがサイレント失敗していた
+  - `AnimationUtility.GetAnimatableBindings()` を使ってバインディングを構築することで正しい `customType` が設定され、アニメーションが適用されるよう修正
+
 ## [2.0.3] - 2026-02-25
 
 ### Changed

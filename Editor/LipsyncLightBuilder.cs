@@ -249,6 +249,12 @@ namespace LipsyncLight
                 Type   rendererType = target.Renderer.GetType();
                 Color  color        = colorSelector(target);
 
+                // MeshRenderer で materials[N].PropertyName バインディングを手動構築すると
+                // customType: 0 になりランタイムでアニメーションが適用されない問題がある。
+                // GetAnimatableBindings() が返すバインディングは Unity 内部で customType が
+                // 正しく設定されているため、それを優先して使用する。
+                var bindingCache = BuildBindingCache(target.Renderer.gameObject, avatarRoot, relativePath);
+
                 foreach (var propName in target.PropertyNames)
                 {
                     if (string.IsNullOrEmpty(propName)) continue;
@@ -264,15 +270,34 @@ namespace LipsyncLight
 
                     foreach (var (suffix, value) in channels)
                     {
+                        string fullPropName = propBase + suffix;
+                        if (!bindingCache.TryGetValue(fullPropName, out var binding))
+                            binding = EditorCurveBinding.FloatCurve(relativePath, rendererType, fullPropName);
+
                         AnimationUtility.SetEditorCurve(
-                            clip,
-                            EditorCurveBinding.FloatCurve(relativePath, rendererType, propBase + suffix),
+                            clip, binding,
                             AnimationCurve.Constant(0f, 0f, value));
                     }
                 }
             }
 
             return clip;
+        }
+
+        /// <summary>
+        /// AnimationUtility.GetAnimatableBindings() から propertyName → EditorCurveBinding の辞書を構築する。
+        /// シーン内オブジェクトでない場合（テスト等）は空辞書を返す。
+        /// </summary>
+        private static Dictionary<string, EditorCurveBinding> BuildBindingCache(
+            GameObject rendererGo, GameObject avatarRoot, string relativePath)
+        {
+            if (!rendererGo.scene.IsValid())
+                return new Dictionary<string, EditorCurveBinding>();
+
+            return AnimationUtility.GetAnimatableBindings(rendererGo, avatarRoot)
+                .Where(b => b.path == relativePath && !b.isPPtrCurve && !b.isDiscreteCurve)
+                .GroupBy(b => b.propertyName)
+                .ToDictionary(g => g.Key, g => g.First());
         }
 
         /// <summary>
