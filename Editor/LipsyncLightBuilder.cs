@@ -415,6 +415,43 @@ namespace LipsyncLight
         {
             AssetDatabase.DeleteAsset(path);
             AssetDatabase.CreateAsset(clip, path);
+            FixMeshRendererCustomType(clip);
+            EditorUtility.SetDirty(clip);
+        }
+
+        /// <summary>
+        /// MeshRenderer (typeID:23) の材質プロパティバインディングが
+        /// customType:0（汎用）になる Unity の内部制限を回避するため、
+        /// SerializedObject 経由で customType を 22（MaterialProperty）に直接書き換える。
+        /// customType:22 にすると Unity ランタイムが MaterialPropertyBlock 経由で
+        /// プロパティを適用し、materials[N].PropertyName 形式が正しく機能する。
+        /// </summary>
+        private static void FixMeshRendererCustomType(AnimationClip clip)
+        {
+            var so = new SerializedObject(clip);
+            var genericBindings = so.FindProperty("m_ClipBindingConstant.genericBindings");
+            if (genericBindings == null || !genericBindings.isArray) return;
+
+            bool modified = false;
+            for (int i = 0; i < genericBindings.arraySize; i++)
+            {
+                var element    = genericBindings.GetArrayElementAtIndex(i);
+                if (element == null) continue;
+                var typeIDProp = element.FindPropertyRelative("typeID");
+                var ctProp     = element.FindPropertyRelative("customType");
+                if (typeIDProp == null || ctProp == null) continue;
+
+                // typeID 23 = MeshRenderer
+                // customType 0 = 汎用（失敗）→ 22 = MaterialProperty（MaterialPropertyBlock 経由）に修正
+                if (typeIDProp.intValue == 23 && ctProp.intValue == 0)
+                {
+                    ctProp.intValue = 22;
+                    modified = true;
+                }
+            }
+
+            if (modified)
+                so.ApplyModifiedPropertiesWithoutUndo();
         }
     }
 }
