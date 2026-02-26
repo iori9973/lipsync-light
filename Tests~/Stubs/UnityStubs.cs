@@ -4,6 +4,15 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 
+namespace UnityEngine.SceneManagement
+{
+    public struct Scene
+    {
+        // テスト環境ではシーン外オブジェクトのみ扱うため常に false を返す
+        public bool IsValid() => false;
+    }
+}
+
 namespace UnityEngine
 {
     public struct Color
@@ -47,6 +56,7 @@ namespace UnityEngine
     public class GameObject : Object
     {
         public Transform transform { get; }
+        public SceneManagement.Scene scene { get; } = default; // テスト環境: IsValid() = false
         public GameObject()           { transform = new Transform { name = "" }; }
         public GameObject(string n)   { name = n; transform = new Transform { name = n }; }
         public T? GetComponent<T>() where T : class => null;
@@ -185,6 +195,8 @@ namespace UnityEditor
         public string path;
         public Type   type;
         public string propertyName;
+        public bool   isPPtrCurve;
+        public bool   isDiscreteCurve;
 
         public static EditorCurveBinding FloatCurve(string path, Type type, string propertyName)
             => new EditorCurveBinding { path = path, type = type, propertyName = propertyName };
@@ -203,6 +215,11 @@ namespace UnityEditor
 
         public static EditorCurveBinding[] GetCurveBindings(AnimationClip clip)
             => clip._bindings.Select(b => b.binding).ToArray();
+
+        // テスト環境ではシーン外オブジェクトのみ扱うため空配列を返す（BuildBindingCache がフォールバックに進む）
+        public static EditorCurveBinding[] GetAnimatableBindings(
+            UnityEngine.GameObject gameObject, UnityEngine.GameObject root)
+            => Array.Empty<EditorCurveBinding>();
     }
 
     public static class AssetDatabase
