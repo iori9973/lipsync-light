@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.0.6] - 2026-02-26
+
+### Fixed
+- MeshRenderer + materialIndex≥1 のターゲットを自動的に SkinnedMeshRenderer へ変換するようにした
+  - Unity のアニメーション binding 制限により、MeshRenderer の `materials[N].` プロパティは
+    どのアプローチでも `customType:22` が付かずランタイムで適用されない
+  - SkinnedMeshRenderer はこの制限がないため、セットアップ実行時に自動変換する
+  - 静的メッシュでは見た目・動作は MeshRenderer と完全に同一
+  - 変換は MeshRenderer かつ materialIndex≥1 の場合のみ実施（不要な変換は行わない）
+  - Undo 対応（変換を元に戻せる）
+
 ## [2.0.5] - 2026-02-26
 
 ### Fixed
