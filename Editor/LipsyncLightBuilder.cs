@@ -31,6 +31,10 @@ namespace LipsyncLight
             var avatarRoot = FindAvatarRoot(setup);
             string outputPath = DeriveOutputPath(avatarRoot);
 
+            // MeshRenderer + materialIndex≥1 の組み合わせは Unity のアニメーション
+            // バインディング制限により動作しないため、自動的に SkinnedMeshRenderer へ変換する
+            ConvertMeshRenderersIfNeeded(setup);
+
             EnsureFolder(outputPath);
             EnsureFolder(outputPath + "/Animations");
 
@@ -399,6 +403,40 @@ namespace LipsyncLight
         {
             if (!controller.parameters.Any(p => p.name == paramName && p.type == type))
                 controller.AddParameter(paramName, type);
+        }
+
+        /// <summary>
+        /// MeshRenderer + materialIndex≥1 の組み合わせは Unity の animation binding 制限で
+        /// customType:22 が付かず、マテリアルプロパティのアニメーションが適用されない。
+        /// SkinnedMeshRenderer は同制限がないため、該当ターゲットを自動変換する。
+        /// 静的メッシュでは見た目・動作は MeshRenderer と完全に同一。
+        /// </summary>
+        private static void ConvertMeshRenderersIfNeeded(LipsyncLightSetup setup)
+        {
+            foreach (var target in setup.Targets)
+            {
+                if (target?.Renderer == null) continue;
+                if (target.MaterialIndex == 0) continue;               // index 0 は MeshRenderer でも動作する
+                if (target.Renderer is SkinnedMeshRenderer) continue;  // すでに SMR なら不要
+                if (target.Renderer is not MeshRenderer mr) continue;
+
+                var go = mr.gameObject;
+                var mf = go.GetComponent<MeshFilter>();
+                if (mf == null) continue;
+
+                var mesh      = mf.sharedMesh;
+                var materials = mr.sharedMaterials;
+
+                Undo.DestroyObjectImmediate(mr);
+                Undo.DestroyObjectImmediate(mf);
+
+                var smr = Undo.AddComponent<SkinnedMeshRenderer>(go);
+                smr.sharedMesh      = mesh;
+                smr.sharedMaterials = materials;
+
+                target.Renderer = smr;
+                Debug.Log($"[LipSync Light] {go.name}: MeshRenderer → SkinnedMeshRenderer に自動変換しました（material index {target.MaterialIndex} のアニメーションに必要）");
+            }
         }
 
         private static void EnsureFolder(string path)

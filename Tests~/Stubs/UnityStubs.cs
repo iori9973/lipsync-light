@@ -85,7 +85,18 @@ namespace UnityEngine
         public Material[] sharedMaterials = Array.Empty<Material>();
     }
 
-    public class SkinnedMeshRenderer : Renderer { }
+    public class Mesh : Object { }
+
+    public class MeshFilter : Component
+    {
+        public Mesh? sharedMesh;
+    }
+
+    public class SkinnedMeshRenderer : Renderer
+    {
+        public Mesh? sharedMesh;
+    }
+
     public class MeshRenderer : Renderer { }
 
     public class Material : Object
@@ -181,6 +192,7 @@ namespace UnityEngine
     public static class Undo
     {
         public static void RegisterCreatedObjectUndo(Object obj, string name) { }
+        public static void DestroyObjectImmediate(Object obj) { }
         public static T AddComponent<T>(GameObject go) where T : Component, new()
             => go.AddComponent<T>();
     }
