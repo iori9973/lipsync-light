@@ -31,10 +31,6 @@ namespace LipsyncLight
             var avatarRoot = FindAvatarRoot(setup);
             string outputPath = DeriveOutputPath(avatarRoot);
 
-            // MeshRenderer + materialIndex≥1 の組み合わせは Unity のアニメーション
-            // バインディング制限により動作しないため、自動的に SkinnedMeshRenderer へ変換する
-            ConvertMeshRenderersIfNeeded(setup);
-
             EnsureFolder(outputPath);
             EnsureFolder(outputPath + "/Animations");
 
@@ -64,14 +60,18 @@ namespace LipsyncLight
             RemoveLayerIfExists(controller, VoiceLayerName);
             RemoveLayerIfExists(controller, VisemeLayerName);
 
+            // materialIndex ≥ 1 のターゲット用マテリアルバリアントを事前生成する
+            // （float curve では customType:0 になりランタイムで適用されないため PPtrCurve で対処）
+            var variantMap = BuildVariantMap(setup, outputPath);
+
             if (setup.Mode == LipsyncMode.Voice || setup.Mode == LipsyncMode.Both)
             {
                 var offClip = CreateEmissionClip(
                     avatarRoot, setup.Targets,
-                    t => t.GetOffColor(setup.ColorGroups), "LipSyncLight_Off");
+                    t => t.GetOffColor(setup.ColorGroups), "LipSyncLight_Off", variantMap);
                 var onClip = CreateEmissionClip(
                     avatarRoot, setup.Targets,
-                    t => t.GetOnColor(setup.ColorGroups) * setup.IntensityMultiplier, "LipSyncLight_On");
+                    t => t.GetOnColor(setup.ColorGroups) * setup.IntensityMultiplier, "LipSyncLight_On", variantMap);
 
                 SaveClip(offClip, outputPath + "/Animations/LipSyncLight_Off.anim");
                 SaveClip(onClip,  outputPath + "/Animations/LipSyncLight_On.anim");
@@ -88,7 +88,7 @@ namespace LipsyncLight
                     clips[i] = CreateEmissionClip(
                         avatarRoot, setup.Targets,
                         t => t.GetVisemeColor(setup.ColorGroups, idx),
-                        $"LipSyncLight_Viseme_{i}");
+                        $"LipSyncLight_Viseme_{i}", variantMap);
                     SaveClip(clips[i], $"{outputPath}/Animations/LipSyncLight_Viseme_{i}.anim");
                 }
                 BuildVisemeLayer(setup, controller, clips, setup.AdditiveBlending);
@@ -235,12 +235,15 @@ namespace LipsyncLight
 
         /// <summary>
         /// 複数ターゲット・複数プロパティのエミッションカラーを1枚の AnimationClip にまとめる。
+        /// materialIndex ≥ 1 のターゲットは PPtrCurve（マテリアルスワップ）方式を使用する。
+        /// variantMap が null またはエントリがない場合はフォールバックとして float curve を使用する。
         /// </summary>
         internal static AnimationClip CreateEmissionClip(
             GameObject avatarRoot,
             List<EmissionTarget> targets,
             Func<EmissionTarget, Color> colorSelector,
-            string clipName)
+            string clipName,
+            Dictionary<(EmissionTarget, string), Material>? variantMap = null)
         {
             var clip = new AnimationClip { name = clipName };
 
@@ -251,12 +254,21 @@ namespace LipsyncLight
 
                 string relativePath = GetRelativePath(avatarRoot.transform, target.Renderer.transform);
                 Type   rendererType = target.Renderer.GetType();
-                Color  color        = colorSelector(target);
 
-                // MeshRenderer で materials[N].PropertyName バインディングを手動構築すると
-                // customType: 0 になりランタイムでアニメーションが適用されない問題がある。
-                // GetAnimatableBindings() が返すバインディングは Unity 内部で customType が
-                // 正しく設定されているため、それを優先して使用する。
+                // materialIndex ≥ 1 かつバリアントマテリアルが用意されている場合は
+                // PPtrCurve（m_Materials.Array.data[N]）でマテリアルごとスワップする。
+                // Unity の animation binding 制限により materials[N].PropertyName は
+                // customType:0 になりランタイムで適用されないためこの方式を採用する。
+                if (target.MaterialIndex >= 1
+                    && variantMap != null
+                    && variantMap.TryGetValue((target, clipName), out var variantMat))
+                {
+                    AddMaterialSwapCurve(clip, relativePath, rendererType, target.MaterialIndex, variantMat);
+                    continue;
+                }
+
+                // materialIndex == 0 またはバリアントなしの場合は float curve を使用
+                Color  color        = colorSelector(target);
                 var bindingCache = BuildBindingCache(target.Renderer.gameObject, avatarRoot, relativePath);
 
                 foreach (var propName in target.PropertyNames)
@@ -286,6 +298,115 @@ namespace LipsyncLight
             }
 
             return clip;
+        }
+
+        /// <summary>
+        /// materialIndex ≥ 1 のターゲット全てについて、各クリップ用のマテリアルバリアントを生成し
+        /// (target, clipName) をキーとする辞書を返す。
+        /// バリアントは元マテリアルのコピーに PropertyNames の色を上書きしたもの。
+        /// 元の発光アニメーション（_EmissionBlink 等）はすべてのプロパティがコピーされるため保持される。
+        /// </summary>
+        private static Dictionary<(EmissionTarget, string), Material> BuildVariantMap(
+            LipsyncLightSetup setup, string outputPath)
+        {
+            var map = new Dictionary<(EmissionTarget, string), Material>();
+
+            bool needsVoice  = setup.Mode == LipsyncMode.Voice  || setup.Mode == LipsyncMode.Both;
+            bool needsViseme = setup.Mode == LipsyncMode.Viseme || setup.Mode == LipsyncMode.Both;
+
+            var targets = setup.Targets
+                .Where(t => t?.Renderer != null && t.MaterialIndex >= 1
+                         && t.PropertyNames != null && t.PropertyNames.Count > 0)
+                .ToList();
+
+            if (targets.Count == 0) return map;
+
+            string materialsPath = outputPath + "/Materials";
+            EnsureFolder(materialsPath);
+
+            foreach (var target in targets)
+            {
+                var mats = target.Renderer.sharedMaterials;
+                if (target.MaterialIndex >= mats.Length || mats[target.MaterialIndex] == null)
+                {
+                    Debug.LogWarning(
+                        $"[LipSync Light] {target.Renderer.gameObject.name}: " +
+                        $"materialIndex {target.MaterialIndex} が sharedMaterials の範囲外です。スキップします。");
+                    continue;
+                }
+
+                var originalMat = mats[target.MaterialIndex];
+                string baseName  = $"{SanitizeName(target.Renderer.gameObject.name)}_mat{target.MaterialIndex}";
+
+                if (needsVoice)
+                {
+                    var offColor = target.GetOffColor(setup.ColorGroups);
+                    var onColor  = target.GetOnColor(setup.ColorGroups) * setup.IntensityMultiplier;
+
+                    map[(target, "LipSyncLight_Off")] = CreateAndSaveMaterialVariant(
+                        originalMat, target.PropertyNames, offColor,
+                        $"{materialsPath}/{baseName}_Off.mat");
+                    map[(target, "LipSyncLight_On")] = CreateAndSaveMaterialVariant(
+                        originalMat, target.PropertyNames, onColor,
+                        $"{materialsPath}/{baseName}_On.mat");
+                }
+
+                if (needsViseme)
+                {
+                    for (int i = 0; i < 15; i++)
+                    {
+                        var color = target.GetVisemeColor(setup.ColorGroups, i);
+                        map[(target, $"LipSyncLight_Viseme_{i}")] = CreateAndSaveMaterialVariant(
+                            originalMat, target.PropertyNames, color,
+                            $"{materialsPath}/{baseName}_Viseme_{i}.mat");
+                    }
+                }
+            }
+
+            return map;
+        }
+
+        /// <summary>
+        /// 元マテリアルをコピーし、指定プロパティに色をセットしてアセットとして保存する。
+        /// </summary>
+        private static Material CreateAndSaveMaterialVariant(
+            Material original,
+            List<string> propertyNames,
+            Color color,
+            string path)
+        {
+            AssetDatabase.DeleteAsset(path);
+            var mat = new Material(original);
+            foreach (var prop in propertyNames)
+                mat.SetColor(prop, color);
+            AssetDatabase.CreateAsset(mat, path);
+            return mat;
+        }
+
+        /// <summary>
+        /// PPtrCurve（m_Materials.Array.data[N]）バインディングを AnimationClip に追加する。
+        /// これにより materialIndex ≥ 1 のスロットへのマテリアルスワップが
+        /// MeshRenderer・SkinnedMeshRenderer を問わずランタイムで正しく適用される。
+        /// </summary>
+        private static void AddMaterialSwapCurve(
+            AnimationClip clip,
+            string path,
+            Type rendererType,
+            int materialIndex,
+            Material material)
+        {
+            var binding = new EditorCurveBinding
+            {
+                path         = path,
+                type         = rendererType,
+                propertyName = $"m_Materials.Array.data[{materialIndex}]",
+                isPPtrCurve  = true,
+            };
+            var keyframes = new ObjectReferenceKeyframe[]
+            {
+                new ObjectReferenceKeyframe { time = 0f, value = material },
+            };
+            AnimationUtility.SetObjectReferenceCurve(clip, binding, keyframes);
         }
 
         /// <summary>
@@ -354,6 +475,9 @@ namespace LipsyncLight
             for (int i = 0; i < 15; i++)
                 AssetDatabase.DeleteAsset($"{animDir}/LipSyncLight_Viseme_{i}.anim");
 
+            // PPtrCurve 用マテリアルバリアントを削除
+            AssetDatabase.DeleteAsset(outputPath + "/Materials");
+
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
             Debug.Log("[LipSync Light] 生成物を削除しました。");
@@ -380,9 +504,6 @@ namespace LipsyncLight
             return descriptor.gameObject;
         }
 
-        private static bool LayerExists(AnimatorController controller, string layerName)
-            => controller.layers.Any(l => l.name == layerName);
-
         private static void RemoveLayerIfExists(AnimatorController controller, string layerName)
         {
             var layers = controller.layers;
@@ -405,40 +526,6 @@ namespace LipsyncLight
                 controller.AddParameter(paramName, type);
         }
 
-        /// <summary>
-        /// MeshRenderer + materialIndex≥1 の組み合わせは Unity の animation binding 制限で
-        /// customType:22 が付かず、マテリアルプロパティのアニメーションが適用されない。
-        /// SkinnedMeshRenderer は同制限がないため、該当ターゲットを自動変換する。
-        /// 静的メッシュでは見た目・動作は MeshRenderer と完全に同一。
-        /// </summary>
-        private static void ConvertMeshRenderersIfNeeded(LipsyncLightSetup setup)
-        {
-            foreach (var target in setup.Targets)
-            {
-                if (target?.Renderer == null) continue;
-                if (target.MaterialIndex == 0) continue;               // index 0 は MeshRenderer でも動作する
-                if (target.Renderer is SkinnedMeshRenderer) continue;  // すでに SMR なら不要
-                if (target.Renderer is not MeshRenderer mr) continue;
-
-                var go = mr.gameObject;
-                var mf = go.GetComponent<MeshFilter>();
-                if (mf == null) continue;
-
-                var mesh      = mf.sharedMesh;
-                var materials = mr.sharedMaterials;
-
-                Undo.DestroyObjectImmediate(mr);
-                Undo.DestroyObjectImmediate(mf);
-
-                var smr = Undo.AddComponent<SkinnedMeshRenderer>(go);
-                smr.sharedMesh      = mesh;
-                smr.sharedMaterials = materials;
-
-                target.Renderer = smr;
-                Debug.Log($"[LipSync Light] {go.name}: MeshRenderer → SkinnedMeshRenderer に自動変換しました（material index {target.MaterialIndex} のアニメーションに必要）");
-            }
-        }
-
         private static void EnsureFolder(string path)
         {
             if (AssetDatabase.IsValidFolder(path)) return;
@@ -453,43 +540,14 @@ namespace LipsyncLight
         {
             AssetDatabase.DeleteAsset(path);
             AssetDatabase.CreateAsset(clip, path);
-            FixMeshRendererCustomType(clip);
             EditorUtility.SetDirty(clip);
         }
 
         /// <summary>
-        /// MeshRenderer (typeID:23) の材質プロパティバインディングが
-        /// customType:0（汎用）になる Unity の内部制限を回避するため、
-        /// SerializedObject 経由で customType を 22（MaterialProperty）に直接書き換える。
-        /// customType:22 にすると Unity ランタイムが MaterialPropertyBlock 経由で
-        /// プロパティを適用し、materials[N].PropertyName 形式が正しく機能する。
+        /// ファイル名として使用できない文字をアンダースコアに置換する。
         /// </summary>
-        private static void FixMeshRendererCustomType(AnimationClip clip)
-        {
-            var so = new SerializedObject(clip);
-            var genericBindings = so.FindProperty("m_ClipBindingConstant.genericBindings");
-            if (genericBindings == null || !genericBindings.isArray) return;
-
-            bool modified = false;
-            for (int i = 0; i < genericBindings.arraySize; i++)
-            {
-                var element    = genericBindings.GetArrayElementAtIndex(i);
-                if (element == null) continue;
-                var typeIDProp = element.FindPropertyRelative("typeID");
-                var ctProp     = element.FindPropertyRelative("customType");
-                if (typeIDProp == null || ctProp == null) continue;
-
-                // typeID 23 = MeshRenderer
-                // customType 0 = 汎用（失敗）→ 22 = MaterialProperty（MaterialPropertyBlock 経由）に修正
-                if (typeIDProp.intValue == 23 && ctProp.intValue == 0)
-                {
-                    ctProp.intValue = 22;
-                    modified = true;
-                }
-            }
-
-            if (modified)
-                so.ApplyModifiedPropertiesWithoutUndo();
-        }
+        private static string SanitizeName(string name)
+            => string.Concat(name.Select(c =>
+                (char.IsLetterOrDigit(c) || c == '_' || c == '-') ? c : '_'));
     }
 }

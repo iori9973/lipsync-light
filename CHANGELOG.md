@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.0.7] - 2026-02-26
+
+### Fixed
+- materialIndex ≥ 1 のターゲットに PPtrCurve（マテリアルスワップ）方式を採用し、発光アニメーションが正しく適用されるようにした
+  - Unity の animation binding では `materials[N].PropertyName`（N≥1）は MeshRenderer・SkinnedMeshRenderer を問わず `customType:0` となりランタイムで適用されない根本的制限があった
+  - セットアップ実行時に各ターゲット・各クリップ用のマテリアルバリアントを `Assets/LipSyncLight/{アバター名}/Materials/` に自動生成
+  - バリアントは元マテリアルのコピーに対象プロパティの色だけを上書きしたもの（`_EmissionBlink` などの既存アニメーションはそのまま保持）
+  - `.anim` ファイル内で `m_Materials.Array.data[N]` バインディング（PPtrCurve）により該当スロットのマテリアルをクリップごとに切り替える
+  - `生成物を削除` でマテリアルバリアントも一括削除される
+- MeshRenderer → SkinnedMeshRenderer への自動変換（v2.0.6）を廃止
+  - SkinnedMeshRenderer でも同じ animation binding 制限があり根本解決になっていなかったため
+
 ## [2.0.6] - 2026-02-26
 
 ### Fixed

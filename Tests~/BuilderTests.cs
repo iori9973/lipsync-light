@@ -296,6 +296,56 @@ public class CreateEmissionClipTests
     }
 
     [Fact]
+    public void MaterialIndex1_WithVariantMap_CreatesPPtrCurveNotFloatCurves()
+    {
+        var (avatarRoot, renderer) = BuildHierarchy("Root", "HMD2");
+        var target = new EmissionTarget
+        {
+            Renderer      = renderer,
+            MaterialIndex = 1,
+            PropertyNames = new List<string> { "_Emission2ndColor" },
+        };
+        var targets    = new List<EmissionTarget> { target };
+        var variantMat = new Material();
+        var variantMap = new Dictionary<(EmissionTarget, string), Material>
+        {
+            { (target, "TestClip"), variantMat },
+        };
+
+        var clip = LipsyncLightBuilder.CreateEmissionClip(
+            avatarRoot, targets, _ => Color.white, "TestClip", variantMap);
+
+        // PPtrCurve が追加され float curve は追加されていない
+        Assert.Empty(AnimationUtility.GetCurveBindings(clip));
+        var pptrBindings = AnimationUtility.GetObjectReferenceCurveBindings(clip);
+        Assert.Single(pptrBindings);
+        Assert.Equal("m_Materials.Array.data[1]", pptrBindings[0].propertyName);
+        Assert.True(pptrBindings[0].isPPtrCurve);
+        Assert.Equal("HMD2", pptrBindings[0].path);
+    }
+
+    [Fact]
+    public void MaterialIndex1_WithoutVariantMap_FallsBackToFloatCurves()
+    {
+        var (avatarRoot, renderer) = BuildHierarchy("Root", "Body");
+        var targets = new List<EmissionTarget>
+        {
+            new EmissionTarget
+            {
+                Renderer      = renderer,
+                MaterialIndex = 1,
+                PropertyNames = new List<string> { "_Emission2ndColor" },
+            }
+        };
+
+        var clip     = LipsyncLightBuilder.CreateEmissionClip(avatarRoot, targets, _ => Color.white, "Test");
+        var bindings = AnimationUtility.GetCurveBindings(clip);
+
+        // variantMap なしのフォールバック: float curve が生成される
+        Assert.Equal(4, bindings.Length);
+    }
+
+    [Fact]
     public void EmptyPropertyNames_IsSkipped()
     {
         var (avatarRoot, renderer) = BuildHierarchy("Root", "Body");

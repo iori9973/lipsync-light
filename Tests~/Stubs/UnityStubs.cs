@@ -105,19 +105,31 @@ namespace UnityEngine
         public Shader shader = new Shader();
         public Material() { }
         public Material(Shader s) { shader = s; }
+        public Material(Material m) { shader = m.shader; } // コピーコンストラクタ
         public bool HasProperty(string n) => _props.Contains(n);
         public void AddProperty(string n) => _props.Add(n);
+        public void SetColor(string name, Color color)  { } // スタブ: 何もしない
     }
 
     public class Shader : Object { }
 
     public abstract class Motion : Object { }
 
+    public struct ObjectReferenceKeyframe
+    {
+        public float  time;
+        public Object value;
+    }
+
     public class AnimationClip : Motion
     {
         // テスト検証用: AnimationUtility.SetEditorCurve が書き込む
         internal readonly List<(UnityEditor.EditorCurveBinding binding, AnimationCurve curve)> _bindings
             = new List<(UnityEditor.EditorCurveBinding, AnimationCurve)>();
+
+        // テスト検証用: AnimationUtility.SetObjectReferenceCurve が書き込む
+        internal readonly List<(UnityEditor.EditorCurveBinding binding, ObjectReferenceKeyframe[] keyframes)> _pptrBindings
+            = new List<(UnityEditor.EditorCurveBinding, ObjectReferenceKeyframe[])>();
     }
 
     public class AnimationCurve
@@ -232,6 +244,13 @@ namespace UnityEditor
         public static EditorCurveBinding[] GetAnimatableBindings(
             UnityEngine.GameObject gameObject, UnityEngine.GameObject root)
             => Array.Empty<EditorCurveBinding>();
+
+        public static void SetObjectReferenceCurve(
+            AnimationClip clip, EditorCurveBinding binding, UnityEngine.ObjectReferenceKeyframe[] keyframes)
+            => clip._pptrBindings.Add((binding, keyframes));
+
+        public static EditorCurveBinding[] GetObjectReferenceCurveBindings(AnimationClip clip)
+            => clip._pptrBindings.Select(b => b.binding).ToArray();
     }
 
     public static class AssetDatabase
