@@ -354,6 +354,24 @@ namespace UnityEditor
 
     public enum MessageType { None, Info, Warning, Error }
 
+    public class SerializedObject : IDisposable
+    {
+        public SerializedObject(UnityEngine.Object obj) { }
+        // テスト環境では null を返す → FixMeshRendererCustomType が早期リターンするため問題なし
+        public SerializedProperty? FindProperty(string propertyPath) => null;
+        public void ApplyModifiedPropertiesWithoutUndo() { }
+        public void Dispose() { }
+    }
+
+    public class SerializedProperty
+    {
+        public bool isArray    => false;
+        public int  arraySize  => 0;
+        public int  intValue   { get; set; }
+        public SerializedProperty? GetArrayElementAtIndex(int index)         => null;
+        public SerializedProperty? FindPropertyRelative(string relativePath) => null;
+    }
+
     public static class ShaderUtil
     {
         public enum ShaderPropertyType { Color = 0, Vector = 1, Float = 2, Range = 3, TexEnv = 4 }

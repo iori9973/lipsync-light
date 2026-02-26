@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.5] - 2026-02-26
+
+### Fixed
+- MeshRenderer の material index ≥ 1 に対するアニメーションが依然として適用されない問題を修正
+  - `GetAnimatableBindings()` も MeshRenderer の `materials[N].` バインディングに `customType:0` を返すことが判明
+  - `.anim` ファイル保存後に `SerializedObject` 経由で `customType:0 → 22` (MaterialProperty) に直接書き換えることで根本的に解決
+
 ## [2.0.4] - 2026-02-26
 
 ### Fixed
