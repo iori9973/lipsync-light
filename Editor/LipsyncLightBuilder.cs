@@ -294,6 +294,26 @@ namespace LipsyncLight
                             clip, binding,
                             AnimationCurve.Constant(0f, 0f, value));
                     }
+
+                    // 非黒色 + materialIndex==0 + 有効化フラグが存在するとき、フラグも有効化する
+                    // （lilToon の _UseEmission 等が 0 だとエミッションが表示されないため）
+                    if (target.MaterialIndex == 0 && (color.r > 0f || color.g > 0f || color.b > 0f))
+                    {
+                        var mats   = target.Renderer.sharedMaterials;
+                        var srcMat = mats.Length > 0 ? mats[0] : null;
+                        if (srcMat != null)
+                        {
+                            var enablePropName = FindEnablePropertyName(propName, srcMat);
+                            if (enablePropName != null)
+                            {
+                                string enablePath = $"material.{enablePropName}";
+                                if (!bindingCache.TryGetValue(enablePath, out var enableBinding))
+                                    enableBinding = EditorCurveBinding.FloatCurve(relativePath, rendererType, enablePath);
+                                AnimationUtility.SetEditorCurve(
+                                    clip, enableBinding, AnimationCurve.Constant(0f, 0f, 1f));
+                            }
+                        }
+                    }
                 }
             }
 
@@ -368,6 +388,7 @@ namespace LipsyncLight
 
         /// <summary>
         /// 元マテリアルをコピーし、指定プロパティに色をセットしてアセットとして保存する。
+        /// 非黒色の場合、対応する有効化フラグ（_UseEmission 等）を自動的に有効化する。
         /// </summary>
         private static Material CreateAndSaveMaterialVariant(
             Material original,
@@ -377,8 +398,18 @@ namespace LipsyncLight
         {
             AssetDatabase.DeleteAsset(path);
             var mat = new Material(original);
+            bool isNonZero = color.r > 0f || color.g > 0f || color.b > 0f;
             foreach (var prop in propertyNames)
+            {
                 mat.SetColor(prop, color);
+                // 非黒色の場合、対応する有効化フラグ（_UseEmission 等）を有効化する
+                if (isNonZero)
+                {
+                    var enableProp = FindEnablePropertyName(prop, original);
+                    if (enableProp != null)
+                        mat.SetFloat(enableProp, 1f);
+                }
+            }
             AssetDatabase.CreateAsset(mat, path);
             return mat;
         }
@@ -395,13 +426,10 @@ namespace LipsyncLight
             int materialIndex,
             Material material)
         {
-            var binding = new EditorCurveBinding
-            {
-                path         = path,
-                type         = rendererType,
-                propertyName = $"m_Materials.Array.data[{materialIndex}]",
-                isPPtrCurve  = true,
-            };
+            var binding = EditorCurveBinding.PPtrCurve(
+                path,
+                rendererType,
+                $"m_Materials.Array.data[{materialIndex}]");
             var keyframes = new ObjectReferenceKeyframe[]
             {
                 new ObjectReferenceKeyframe { time = 0f, value = material },
@@ -423,6 +451,26 @@ namespace LipsyncLight
                 .Where(b => b.path == relativePath && !b.isPPtrCurve && !b.isDiscreteCurve)
                 .GroupBy(b => b.propertyName)
                 .ToDictionary(g => g.Key, g => g.First());
+        }
+
+        /// <summary>
+        /// カラープロパティ名（例: "_EmissionColor"）に対応する有効化フラグ名
+        /// （例: "_UseEmission"）を返す。シェーダーがそのプロパティを持たない場合は null。
+        /// パターン: "_FooColor" → "_UseFoo"（lilToon の _UseEmission 等に対応）
+        /// </summary>
+        internal static string? FindEnablePropertyName(string colorPropName, Material mat)
+        {
+            if (colorPropName.StartsWith("_") && colorPropName.EndsWith("Color"))
+            {
+                var stem = colorPropName[1..^5]; // "Emission", "Emission2nd" など
+                if (stem.Length > 0)
+                {
+                    var candidate = "_Use" + stem;
+                    if (mat.HasProperty(candidate))
+                        return candidate;
+                }
+            }
+            return null;
         }
 
         /// <summary>

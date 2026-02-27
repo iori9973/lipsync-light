@@ -102,13 +102,16 @@ namespace UnityEngine
     public class Material : Object
     {
         private readonly HashSet<string> _props = new HashSet<string>();
+        private readonly Dictionary<string, float> _floats = new Dictionary<string, float>();
         public Shader shader = new Shader();
         public Material() { }
         public Material(Shader s) { shader = s; }
-        public Material(Material m) { shader = m.shader; } // コピーコンストラクタ
+        public Material(Material m) { shader = m.shader; _props = new HashSet<string>(m._props); } // コピーコンストラクタ
         public bool HasProperty(string n) => _props.Contains(n);
         public void AddProperty(string n) => _props.Add(n);
         public void SetColor(string name, Color color)  { } // スタブ: 何もしない
+        public void SetFloat(string name, float value)  => _floats[name] = value;
+        public float GetFloat(string name) => _floats.TryGetValue(name, out var v) ? v : 0f;
     }
 
     public class Shader : Object { }
@@ -224,6 +227,9 @@ namespace UnityEditor
 
         public static EditorCurveBinding FloatCurve(string path, Type type, string propertyName)
             => new EditorCurveBinding { path = path, type = type, propertyName = propertyName };
+
+        public static EditorCurveBinding PPtrCurve(string path, Type type, string propertyName)
+            => new EditorCurveBinding { path = path, type = type, propertyName = propertyName, isPPtrCurve = true };
 
         public bool Equals(EditorCurveBinding o)
             => path == o.path && type == o.type && propertyName == o.propertyName;

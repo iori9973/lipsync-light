@@ -346,6 +346,56 @@ public class CreateEmissionClipTests
     }
 
     [Fact]
+    public void NonZeroColor_WithUseEmission_AddsEnableCurve()
+    {
+        var (avatarRoot, renderer) = BuildHierarchy("Root", "Body");
+        var mat = new Material();
+        mat.AddProperty("_UseEmission");
+        renderer.sharedMaterials = new[] { mat };
+
+        var targets = new List<EmissionTarget>
+        {
+            new EmissionTarget
+            {
+                Renderer      = renderer,
+                MaterialIndex = 0,
+                PropertyNames = new List<string> { "_EmissionColor" },
+            }
+        };
+
+        var clip     = LipsyncLightBuilder.CreateEmissionClip(avatarRoot, targets, _ => Color.white, "T");
+        var bindings = AnimationUtility.GetCurveBindings(clip);
+        var props    = bindings.Select(b => b.propertyName).ToList();
+
+        Assert.Contains("material._UseEmission", props);
+    }
+
+    [Fact]
+    public void ZeroColor_WithUseEmission_DoesNotAddEnableCurve()
+    {
+        var (avatarRoot, renderer) = BuildHierarchy("Root", "Body");
+        var mat = new Material();
+        mat.AddProperty("_UseEmission");
+        renderer.sharedMaterials = new[] { mat };
+
+        var targets = new List<EmissionTarget>
+        {
+            new EmissionTarget
+            {
+                Renderer      = renderer,
+                MaterialIndex = 0,
+                PropertyNames = new List<string> { "_EmissionColor" },
+            }
+        };
+
+        var clip     = LipsyncLightBuilder.CreateEmissionClip(avatarRoot, targets, _ => Color.black, "T");
+        var bindings = AnimationUtility.GetCurveBindings(clip);
+        var props    = bindings.Select(b => b.propertyName).ToList();
+
+        Assert.DoesNotContain("material._UseEmission", props);
+    }
+
+    [Fact]
     public void EmptyPropertyNames_IsSkipped()
     {
         var (avatarRoot, renderer) = BuildHierarchy("Root", "Body");
@@ -387,5 +437,51 @@ public class CreateEmissionClipTests
         Assert.Contains("material._EmissionColor.g", props);
         Assert.Contains("material._EmissionColor.b", props);
         Assert.Contains("material._EmissionColor.a", props);
+    }
+}
+
+public class FindEnablePropertyNameTests
+{
+    [Fact]
+    public void EmissionColor_WithUseEmissionProp_ReturnsUseEmission()
+    {
+        var mat = new Material();
+        mat.AddProperty("_UseEmission");
+
+        string? result = LipsyncLightBuilder.FindEnablePropertyName("_EmissionColor", mat);
+
+        Assert.Equal("_UseEmission", result);
+    }
+
+    [Fact]
+    public void Emission2ndColor_WithUseEmission2ndProp_ReturnsUseEmission2nd()
+    {
+        var mat = new Material();
+        mat.AddProperty("_UseEmission2nd");
+
+        string? result = LipsyncLightBuilder.FindEnablePropertyName("_Emission2ndColor", mat);
+
+        Assert.Equal("_UseEmission2nd", result);
+    }
+
+    [Fact]
+    public void EmissionColor_WithoutUseEmissionProp_ReturnsNull()
+    {
+        var mat = new Material(); // _UseEmission なし
+
+        string? result = LipsyncLightBuilder.FindEnablePropertyName("_EmissionColor", mat);
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public void Color_NoStem_ReturnsNull()
+    {
+        var mat = new Material();
+        mat.AddProperty("_Use"); // stem が空になるので無視される
+
+        string? result = LipsyncLightBuilder.FindEnablePropertyName("_Color", mat);
+
+        Assert.Null(result);
     }
 }
