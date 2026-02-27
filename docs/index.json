@@ -5,6 +5,26 @@
   "packages": {
     "com.lipsync-light": {
       "versions": {
+        "2.0.9": {
+          "name": "com.lipsync-light",
+          "version": "2.0.9",
+          "displayName": "LipSync Light",
+          "description": "リップシンクに連動してマテリアルのエミッションを制御する Animator 設定を自動生成する Unity Editor 拡張です。",
+          "unity": "2022.3",
+          "type": "tool",
+          "author": {
+            "name": "iori9973",
+            "url": "https://github.com/iori9973"
+          },
+          "url": "https://github.com/iori9973/lipsync-light/releases/download/v2.0.9/lipsync-light-2.0.9.zip",
+          "changelogUrl": "https://github.com/iori9973/lipsync-light/blob/main/CHANGELOG.md",
+          "dependencies": {},
+          "vpmDependencies": {
+            "com.vrchat.avatars": ">=3.5.0",
+            "nadena.dev.modular-avatar": ">=1.10.0"
+          },
+          "zipSHA256": "8298c51d392bd0ed7cf5c65cec8415ca7fa31db9f47761a655a863a1500357e0"
+        },
         "2.0.8": {
           "name": "com.lipsync-light",
           "version": "2.0.8",
