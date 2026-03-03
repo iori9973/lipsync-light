@@ -117,6 +117,22 @@ namespace LipsyncLight
                 return;
             }
 
+            // 重複セットアップ警告（エラーとして上部に表示）
+            {
+                var allSetups = _avatarRoot.GetComponentsInChildren<LipsyncLightSetup>();
+                if (allSetups.Length > 1)
+                {
+                    var names = string.Join("、", allSetups.Select(s => s.gameObject.name));
+                    EditorGUILayout.HelpBox(
+                        $"重複エラー: 同一アバター内に LipsyncLightSetup が {allSetups.Length} 件あります。\n" +
+                        $"（{names}）\n" +
+                        "重複するとアニメーターが二重マージされ、正常に動作しません。\n" +
+                        "不要なセットアップを削除してください。",
+                        MessageType.Error);
+                    EditorGUILayout.Space(4);
+                }
+            }
+
             // Mode
             DrawSectionHeader("モード");
             _setup.Mode = (LipsyncMode)GUILayout.SelectionGrid(
@@ -812,6 +828,12 @@ namespace LipsyncLight
                 return "Avatar Root が設定されていません。";
             if (_avatarRoot.GetComponent<VRC.SDK3.Avatars.Components.VRCAvatarDescriptor>() == null)
                 return "Avatar Root に VRCAvatarDescriptor が見つかりません。";
+            var allSetups = _avatarRoot.GetComponentsInChildren<LipsyncLightSetup>();
+            if (allSetups.Length > 1)
+            {
+                var names = string.Join("、", allSetups.Select(s => s.gameObject.name));
+                return $"重複セットアップ: 同一アバター内に {allSetups.Length} 件の LipsyncLightSetup があります（{names}）。不要なセットアップを削除してください。";
+            }
             if (_setup == null)
                 return "セットアップコンポーネントが見つかりません。";
             if (_setup.Targets == null || _setup.Targets.Count == 0)
@@ -834,21 +856,21 @@ namespace LipsyncLight
         private void TryLoadSetup()
         {
             if (_avatarRoot == null) { _setup = null; return; }
-            var child = _avatarRoot.transform.Find("LipSync Light");
-            if (child != null)
-                _setup = child.GetComponent<LipsyncLightSetup>();
+            var existing = _avatarRoot.GetComponentsInChildren<LipsyncLightSetup>();
+            if (existing.Length > 0)
+                _setup = existing[0];
         }
 
         private void LoadOrCreateSetup()
         {
             if (_avatarRoot == null) { _setup = null; return; }
 
-            // 既存の "LipSync Light" 子 GameObject を探す
-            var child = _avatarRoot.transform.Find("LipSync Light");
-            if (child != null)
+            // アバター配下に既存の LipsyncLightSetup を探す（GameObject 名によらず）
+            var existing = _avatarRoot.GetComponentsInChildren<LipsyncLightSetup>();
+            if (existing.Length > 0)
             {
-                _setup = child.GetComponent<LipsyncLightSetup>();
-                if (_setup != null) return;
+                _setup = existing[0];
+                return;
             }
 
             // 新規作成

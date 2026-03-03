@@ -1,5 +1,30 @@
 # Changelog
 
+## [2.0.10] - 2026-03-03
+
+### Fixed
+- 同一アバター内に LipsyncLightSetup が複数存在する場合（重複セットアップ）を検出してエラーを表示するようにした
+  - 重複があると MA MergeAnimator が同一 FX Controller を二重にマージし、レイヤーが2セット追加されて正常に動作しない
+  - `Build()` 実行時に重複を検出した場合は `InvalidOperationException` を throw してビルドを中断する
+  - EditorWindow の `Validate()` で重複を検出した場合は「セットアップ実行」ボタンを無効化する
+  - EditorWindow の上部に Error HelpBox で重複オブジェクト名を表示する
+- Avatar Root 切り替え時に既存の LipsyncLightSetup を GameObject 名によらず検出するようにした
+  - 従来は "LipSync Light" という名前の子 GameObject のみを探していたため、別名の既存セットアップがある場合に重複作成されることがあった
+  - `GetComponentsInChildren<LipsyncLightSetup>()` で名前によらず検索するよう変更
+
+## [2.0.9] - 2026-03-01
+
+### Fixed
+- CS8632 / CS0200 警告・エラーを修正し Unity コンパイル互換性を改善した
+
+## [2.0.8] - 2026-02-26
+
+### Fixed
+- lilToon の `_UseEmission` / `_UseEmission2nd` などの有効化フラグを自動的に ON にするようにした
+  - エミッションカラーを設定しても有効化フラグが 0 のままだと lilToon では発光が表示されない
+  - 非黒色カラーを設定する際、対応する `_Use{Stem}` プロパティが存在すれば自動的に 1f に設定する
+  - materialIndex ≥ 1 のバリアントマテリアルにも同様の処理を適用
+
 ## [2.0.7] - 2026-02-26
 
 ### Fixed

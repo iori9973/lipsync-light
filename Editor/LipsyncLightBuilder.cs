@@ -30,6 +30,18 @@ namespace LipsyncLight
                 throw new InvalidOperationException("ターゲットが1つも設定されていません。");
 
             var avatarRoot = FindAvatarRoot(setup);
+
+            // 重複セットアップの検出（同一アバター内に複数ある場合は二重マージになるためエラー）
+            var allSetups = avatarRoot.GetComponentsInChildren<LipsyncLightSetup>();
+            if (allSetups.Length > 1)
+            {
+                var others = string.Join("、", allSetups.Where(s => s != setup).Select(s => s.gameObject.name));
+                throw new InvalidOperationException(
+                    $"同一アバター内に LipsyncLightSetup が複数存在します（{others}）。\n" +
+                    "重複するとアニメーターが二重マージされ、正常に動作しません。\n" +
+                    "不要なセットアップを削除してから再実行してください。");
+            }
+
             string outputPath = DeriveOutputPath(avatarRoot);
 
             EnsureFolder(outputPath);
