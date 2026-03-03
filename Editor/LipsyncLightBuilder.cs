@@ -399,15 +399,14 @@ namespace LipsyncLight
                     var offColor = target.GetOffColor(setup.ColorGroups);
                     var onColor  = target.GetOnColor(setup.ColorGroups) * setup.IntensityMultiplier;
 
-                    // Off カラーが黒（デフォルト）の場合、元マテリアルをそのまま Off 状態として使用する。
-                    // 黒バリアントを使うと _EmissionBlink 等のシェーダー内部アニメーションの
-                    // 土台色がゼロになり点滅効果が消えるため、元マテリアルを参照することで保持する。
-                    if (!(offColor.r > 0f || offColor.g > 0f || offColor.b > 0f))
-                        map[(target, "LipSyncLight_Off")] = originalMat;
-                    else
-                        map[(target, "LipSyncLight_Off")] = CreateAndSaveMaterialVariant(
-                            originalMat, target.PropertyNames, offColor,
-                            $"{materialsPath}/{baseName}_Off.mat");
+                    // Off カラーが黒の場合も常にバリアントマテリアルを生成する。
+                    // 黒バリアントは _EmissionColor=(0,0,0) を持つため、Off 状態で確実に消灯する。
+                    // 元マテリアルを参照すると Off 時に元の発光色が見えてしまうため、
+                    // ユーザーが黒を設定した意図（「非発声時に消灯」）を正しく反映できない。
+                    // _EmissionBlink は黒バリアントにも存在するが土台色がゼロなため視覚的に無効。
+                    map[(target, "LipSyncLight_Off")] = CreateAndSaveMaterialVariant(
+                        originalMat, target.PropertyNames, offColor,
+                        $"{materialsPath}/{baseName}_Off.mat");
                     map[(target, "LipSyncLight_On")] = CreateAndSaveMaterialVariant(
                         originalMat, target.PropertyNames, onColor,
                         $"{materialsPath}/{baseName}_On.mat");
