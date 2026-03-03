@@ -104,13 +104,15 @@ namespace UnityEngine
     {
         private readonly HashSet<string> _props = new HashSet<string>();
         private readonly Dictionary<string, float> _floats = new Dictionary<string, float>();
+        private readonly Dictionary<string, Color> _colors = new Dictionary<string, Color>();
         public Shader shader = new Shader();
         public Material() { }
         public Material(Shader s) { shader = s; }
-        public Material(Material m) { shader = m.shader; _props = new HashSet<string>(m._props); } // コピーコンストラクタ
+        public Material(Material m) { shader = m.shader; _props = new HashSet<string>(m._props); _colors = new Dictionary<string, Color>(m._colors); } // コピーコンストラクタ
         public bool HasProperty(string n) => _props.Contains(n);
         public void AddProperty(string n) => _props.Add(n);
-        public void SetColor(string name, Color color)  { } // スタブ: 何もしない
+        public void SetColor(string name, Color color)  { _colors[name] = color; _props.Add(name); }
+        public Color GetColor(string name) => _colors.TryGetValue(name, out var c) ? c : default;
         public void SetFloat(string name, float value)  => _floats[name] = value;
         public float GetFloat(string name) => _floats.TryGetValue(name, out var v) ? v : 0f;
     }

@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.0.13] - 2026-03-03
+
+### Fixed
+- Off 状態でも lilToon の `_EmissionBlink` / `_Emission2ndBlink` 点滅効果が維持されるよう修正
+  - 従来は Off カラーのデフォルト（黒）が `_EmissionColor=(0,0,0,0)` として書き込まれていたため、シェーダー内部で色を変調する `_EmissionBlink` の土台がゼロになり点滅が消えていた
+  - materialIndex=0（float curve）: Off カラーが黒の場合、各プロパティの元マテリアル設定色を Off ベースとして自動使用するよう変更
+  - materialIndex≥1（PPtrCurve）: Off カラーが黒の場合、黒バリアントを生成せず元マテリアルをそのまま Off 状態として参照するよう変更
+  - ユーザーが Off カラーを明示的に非黒に設定している場合は従来通り動作する
+
 ## [2.0.12] - 2026-03-03
 
 ### Fixed

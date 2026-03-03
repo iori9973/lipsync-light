@@ -81,7 +81,8 @@ namespace LipsyncLight
             {
                 var offClip = CreateEmissionClip(
                     avatarRoot, setup.Targets,
-                    t => t.GetOffColor(setup.ColorGroups), "LipSyncLight_Off", variantMap);
+                    t => t.GetOffColor(setup.ColorGroups), "LipSyncLight_Off", variantMap,
+                    preserveOriginalForBlack: true);
                 var onClip = CreateEmissionClip(
                     avatarRoot, setup.Targets,
                     t => t.GetOnColor(setup.ColorGroups) * setup.IntensityMultiplier, "LipSyncLight_On", variantMap);
@@ -256,7 +257,8 @@ namespace LipsyncLight
             List<EmissionTarget> targets,
             Func<EmissionTarget, Color> colorSelector,
             string clipName,
-            Dictionary<(EmissionTarget, string), Material>? variantMap = null)
+            Dictionary<(EmissionTarget, string), Material>? variantMap = null,
+            bool preserveOriginalForBlack = false)
         {
             var clip = new AnimationClip { name = clipName };
 
@@ -281,12 +283,28 @@ namespace LipsyncLight
                 }
 
                 // materialIndex == 0 またはバリアントなしの場合は float curve を使用
-                Color  color        = colorSelector(target);
+                Color  baseColor    = colorSelector(target);
                 var bindingCache = BuildBindingCache(target.Renderer.gameObject, avatarRoot, relativePath);
 
                 foreach (var propName in target.PropertyNames)
                 {
                     if (string.IsNullOrEmpty(propName)) continue;
+
+                    // Off クリップかつ設定カラーが黒の場合、元マテリアルの実際の色にフォールバック。
+                    // lilToon の _EmissionBlink 等はシェーダー内部で _EmissionColor を変調するため、
+                    // Off 状態でもゼロ以外の色が必要（黒だと点滅効果が消える）。
+                    Color color = baseColor;
+                    if (preserveOriginalForBlack && !(color.r > 0f || color.g > 0f || color.b > 0f))
+                    {
+                        var mats   = target.Renderer.sharedMaterials;
+                        var srcMat = mats.Length > target.MaterialIndex ? mats[target.MaterialIndex] : null;
+                        if (srcMat != null && srcMat.HasProperty(propName))
+                        {
+                            var origColor = srcMat.GetColor(propName);
+                            if (origColor.r > 0f || origColor.g > 0f || origColor.b > 0f)
+                                color = origColor;
+                        }
+                    }
 
                     string propBase = BuildPropertyPath(target.MaterialIndex, propName);
                     var channels = new (string suffix, float value)[]
@@ -376,9 +394,15 @@ namespace LipsyncLight
                     var offColor = target.GetOffColor(setup.ColorGroups);
                     var onColor  = target.GetOnColor(setup.ColorGroups) * setup.IntensityMultiplier;
 
-                    map[(target, "LipSyncLight_Off")] = CreateAndSaveMaterialVariant(
-                        originalMat, target.PropertyNames, offColor,
-                        $"{materialsPath}/{baseName}_Off.mat");
+                    // Off カラーが黒（デフォルト）の場合、元マテリアルをそのまま Off 状態として使用する。
+                    // 黒バリアントを使うと _EmissionBlink 等のシェーダー内部アニメーションの
+                    // 土台色がゼロになり点滅効果が消えるため、元マテリアルを参照することで保持する。
+                    if (!(offColor.r > 0f || offColor.g > 0f || offColor.b > 0f))
+                        map[(target, "LipSyncLight_Off")] = originalMat;
+                    else
+                        map[(target, "LipSyncLight_Off")] = CreateAndSaveMaterialVariant(
+                            originalMat, target.PropertyNames, offColor,
+                            $"{materialsPath}/{baseName}_Off.mat");
                     map[(target, "LipSyncLight_On")] = CreateAndSaveMaterialVariant(
                         originalMat, target.PropertyNames, onColor,
                         $"{materialsPath}/{baseName}_On.mat");
