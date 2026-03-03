@@ -61,6 +61,7 @@ namespace UnityEngine
         public GameObject(string n)   { name = n; transform = new Transform { name = n }; }
         public T? GetComponent<T>() where T : class => null;
         public T? GetComponentInParent<T>() where T : class => null;
+        public T[] GetComponentsInChildren<T>() where T : class => Array.Empty<T>();
         public T AddComponent<T>() where T : Component, new() => new T();
     }
 
