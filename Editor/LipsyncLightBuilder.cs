@@ -73,8 +73,9 @@ namespace LipsyncLight
             RemoveLayerIfExists(controller, VoiceLayerName);
             RemoveLayerIfExists(controller, VisemeLayerName);
 
-            // materialIndex ≥ 1 のターゲット用マテリアルバリアントを事前生成する
-            // （float curve では customType:0 になりランタイムで適用されないため PPtrCurve で対処）
+            // 全ターゲット用マテリアルバリアントを事前生成する
+            // （PPtrCurve 方式を採用することで float curve による _EmissionColor 書き込みを行わず、
+            //   lilToon の _EmissionBlink 等のシェーダー内部点滅効果との共存を実現する）
             var variantMap = BuildVariantMap(setup, outputPath);
 
             if (setup.Mode == LipsyncMode.Voice || setup.Mode == LipsyncMode.Both)
@@ -249,7 +250,9 @@ namespace LipsyncLight
 
         /// <summary>
         /// 複数ターゲット・複数プロパティのエミッションカラーを1枚の AnimationClip にまとめる。
-        /// materialIndex ≥ 1 のターゲットは PPtrCurve（マテリアルスワップ）方式を使用する。
+        /// variantMap にエントリがある場合は全 materialIndex に対して
+        /// PPtrCurve（マテリアルスワップ）方式を使用する。
+        /// これにより lilToon の _EmissionBlink 等のシェーダー内部点滅効果との共存が可能になる。
         /// variantMap が null またはエントリがない場合はフォールバックとして float curve を使用する。
         /// </summary>
         internal static AnimationClip CreateEmissionClip(
@@ -270,12 +273,12 @@ namespace LipsyncLight
                 string relativePath = GetRelativePath(avatarRoot.transform, target.Renderer.transform);
                 Type   rendererType = target.Renderer.GetType();
 
-                // materialIndex ≥ 1 かつバリアントマテリアルが用意されている場合は
+                // バリアントマテリアルが用意されている場合は全 materialIndex に対して
                 // PPtrCurve（m_Materials.Array.data[N]）でマテリアルごとスワップする。
-                // Unity の animation binding 制限により materials[N].PropertyName は
-                // customType:0 になりランタイムで適用されないためこの方式を採用する。
-                if (target.MaterialIndex >= 1
-                    && variantMap != null
+                // float curve で _EmissionColor を書き込むと、他のアニメーターレイヤーや
+                // lilToon の _EmissionBlink 等のシェーダー内部点滅処理に干渉するため
+                // この方式を採用する。materialIndex==0 も対象。
+                if (variantMap != null
                     && variantMap.TryGetValue((target, clipName), out var variantMat))
                 {
                     AddMaterialSwapCurve(clip, relativePath, rendererType, target.MaterialIndex, variantMat);
@@ -352,10 +355,12 @@ namespace LipsyncLight
         }
 
         /// <summary>
-        /// materialIndex ≥ 1 のターゲット全てについて、各クリップ用のマテリアルバリアントを生成し
+        /// 全ターゲットについて、各クリップ用のマテリアルバリアントを生成し
         /// (target, clipName) をキーとする辞書を返す。
+        /// materialIndex==0 を含む全インデックスが対象。
+        /// Off カラーが黒の場合は元マテリアルをそのまま Off 状態として参照し、
+        /// バリアントを生成しない（これにより _EmissionBlink 等が保持される）。
         /// バリアントは元マテリアルのコピーに PropertyNames の色を上書きしたもの。
-        /// 元の発光アニメーション（_EmissionBlink 等）はすべてのプロパティがコピーされるため保持される。
         /// </summary>
         private static Dictionary<(EmissionTarget, string), Material> BuildVariantMap(
             LipsyncLightSetup setup, string outputPath)
@@ -366,7 +371,7 @@ namespace LipsyncLight
             bool needsViseme = setup.Mode == LipsyncMode.Viseme || setup.Mode == LipsyncMode.Both;
 
             var targets = setup.Targets
-                .Where(t => t?.Renderer != null && t.MaterialIndex >= 1
+                .Where(t => t?.Renderer != null
                          && t.PropertyNames != null && t.PropertyNames.Count > 0)
                 .ToList();
 

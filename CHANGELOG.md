@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.0.14] - 2026-03-03
+
+### Fixed
+- `materialIndex=0` のターゲットも PPtrCurve（マテリアルスワップ）方式に統一し、lilToon の `_EmissionBlink` / `_Emission2ndBlink` 点滅効果との確実な共存を実現
+  - 従来（v2.0.13 まで）は `materialIndex=0` で float curve による `_EmissionColor` 書き込みを行っていたため、アニメーターレイヤーが `_EmissionColor` を常時上書きし、他レイヤーや lilToon シェーダー内部の点滅処理に干渉していた
+  - Off 状態では元マテリアルをそのまま参照（PPtrCurve）するため、マテリアルの `_EmissionBlink` 設定が完全に保持され自然な点滅が継続する
+  - On 状態では OnColor を設定したバリアントマテリアルを参照（PPtrCurve）するため、発光色が正確に反映される
+  - `materialIndex=0` でも `Assets/LipSyncLight/{アバター名}/Materials/` にバリアントマテリアルが生成されるようになった
+
 ## [2.0.13] - 2026-03-03
 
 ### Fixed

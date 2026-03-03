@@ -296,6 +296,37 @@ public class CreateEmissionClipTests
     }
 
     [Fact]
+    public void MaterialIndex0_WithVariantMap_CreatesPPtrCurveNotFloatCurves()
+    {
+        // materialIndex=0 でも variantMap があれば PPtrCurve を使うことを確認する
+        // （float curve で _EmissionColor を書き込むと lilToon の _EmissionBlink に干渉するため）
+        var (avatarRoot, renderer) = BuildHierarchy("Root", "Hair");
+        var target = new EmissionTarget
+        {
+            Renderer      = renderer,
+            MaterialIndex = 0,
+            PropertyNames = new List<string> { "_EmissionColor" },
+        };
+        var targets    = new List<EmissionTarget> { target };
+        var variantMat = new Material();
+        var variantMap = new Dictionary<(EmissionTarget, string), Material>
+        {
+            { (target, "TestClip"), variantMat },
+        };
+
+        var clip = LipsyncLightBuilder.CreateEmissionClip(
+            avatarRoot, targets, _ => Color.white, "TestClip", variantMap);
+
+        // PPtrCurve が追加され float curve は追加されていない
+        Assert.Empty(AnimationUtility.GetCurveBindings(clip));
+        var pptrBindings = AnimationUtility.GetObjectReferenceCurveBindings(clip);
+        Assert.Single(pptrBindings);
+        Assert.Equal("m_Materials.Array.data[0]", pptrBindings[0].propertyName);
+        Assert.True(pptrBindings[0].isPPtrCurve);
+        Assert.Equal("Hair", pptrBindings[0].path);
+    }
+
+    [Fact]
     public void MaterialIndex1_WithVariantMap_CreatesPPtrCurveNotFloatCurves()
     {
         var (avatarRoot, renderer) = BuildHierarchy("Root", "HMD2");
