@@ -804,13 +804,18 @@ namespace LipsyncLight
         {
             if (!EditorUtility.DisplayDialog(
                     "LipSync Light",
-                    "生成物（AnimationClip・FX Controller・MA Merge Animator）を削除しますか？",
+                    "生成物（AnimationClip・FX Controller・MA Merge Animator）および「LipSync Light」オブジェクトを削除しますか？",
                     "削除", "キャンセル"))
                 return;
 
             try
             {
+                var go = _setup?.gameObject;
                 LipsyncLightBuilder.DeleteGenerated(_setup);
+                if (go != null)
+                    Undo.DestroyObjectImmediate(go);
+                _setup = null;
+                _avatarRoot = null;
             }
             catch (System.Exception ex)
             {
