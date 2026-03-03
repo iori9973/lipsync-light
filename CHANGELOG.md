@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.0.11] - 2026-03-03
+
+### Fixed
+- 「生成物を削除」実行後に「LipSync Light」オブジェクトが自動再生成される問題を修正
+  - 削除後に「LipSync Light」GameObjectとLipsyncLightSetupコンポーネントも合わせて削除するようにした
+  - Avatar Root もクリアすることで EditorWindow が自動再生成しなくなる
+  - 削除はUndoに対応している
+
 ## [2.0.10] - 2026-03-03
 
 ### Fixed
