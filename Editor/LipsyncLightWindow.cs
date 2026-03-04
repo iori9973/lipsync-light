@@ -9,10 +9,10 @@ namespace LipsyncLight
     internal class LipsyncLightWindow : EditorWindow
     {
         // アバタールート（シリアライズして domain reload 後も保持）
-        [SerializeField] private GameObject _avatarRoot;
+        [SerializeField] private GameObject? _avatarRoot;
 
         // セットアップコンポーネント（シリアライズ不要 - アバターから都度取得）
-        private LipsyncLightSetup _setup;
+        private LipsyncLightSetup? _setup;
 
         [SerializeField] private List<bool> _visemeFoldouts       = new List<bool>();
         [SerializeField] private List<bool> _groupVisemeFoldouts  = new List<bool>();
@@ -195,7 +195,7 @@ namespace LipsyncLight
             EditorGUILayout.Space(12);
 
             // Validation
-            string validationError = Validate();
+            string? validationError = Validate();
             if (!string.IsNullOrEmpty(validationError))
                 EditorGUILayout.HelpBox(validationError, MessageType.Warning);
 
@@ -834,7 +834,7 @@ namespace LipsyncLight
         // Validation
         // ---------------------------------------------------------------
 
-        private string Validate()
+        private string? Validate()
         {
             if (_avatarRoot == null)
                 return "Avatar Root が設定されていません。";

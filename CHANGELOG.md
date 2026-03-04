@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.0.17] - 2026-03-04
+
+### Fixed
+- インポート時に表示される CS8618 / CS8625 / CS8602 / CS8603 nullable 参照型警告を修正
+  - `_avatarRoot` フィールドを `GameObject?` に変更
+  - `_setup` フィールドを `LipsyncLightSetup?` に変更
+  - `Validate()` の戻り値を `string?` に変更
+  - `validationError` の型を `string?` に変更
+
 ## [2.0.16] - 2026-03-04
 
 ### Fixed
