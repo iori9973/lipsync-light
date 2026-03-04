@@ -358,8 +358,9 @@ namespace LipsyncLight
         /// 全ターゲットについて、各クリップ用のマテリアルバリアントを生成し
         /// (target, clipName) をキーとする辞書を返す。
         /// materialIndex==0 を含む全インデックスが対象。
-        /// Off カラーが黒の場合は元マテリアルをそのまま Off 状態として参照し、
-        /// バリアントを生成しない（これにより _EmissionBlink 等が保持される）。
+        /// AdditiveBlending=true かつ Off カラーが黒の場合は元マテリアルをそのまま Off 状態として参照し、
+        /// バリアントを生成しない（加算モードの意図：Off 状態では元の発光・点滅を変えない）。
+        /// AdditiveBlending=false かつ Off カラーが黒の場合は黒バリアントを生成して確実に消灯する。
         /// バリアントは元マテリアルのコピーに PropertyNames の色を上書きしたもの。
         /// </summary>
         private static Dictionary<(EmissionTarget, string), Material> BuildVariantMap(
@@ -399,14 +400,20 @@ namespace LipsyncLight
                     var offColor = target.GetOffColor(setup.ColorGroups);
                     var onColor  = target.GetOnColor(setup.ColorGroups) * setup.IntensityMultiplier;
 
-                    // Off カラーが黒の場合も常にバリアントマテリアルを生成する。
-                    // 黒バリアントは _EmissionColor=(0,0,0) を持つため、Off 状態で確実に消灯する。
-                    // 元マテリアルを参照すると Off 時に元の発光色が見えてしまうため、
-                    // ユーザーが黒を設定した意図（「非発声時に消灯」）を正しく反映できない。
-                    // _EmissionBlink は黒バリアントにも存在するが土台色がゼロなため視覚的に無効。
-                    map[(target, "LipSyncLight_Off")] = CreateAndSaveMaterialVariant(
-                        originalMat, target.PropertyNames, offColor,
-                        $"{materialsPath}/{baseName}_Off.mat");
+                    // AdditiveBlending=true かつ Off カラーが黒の場合、元マテリアルをそのまま参照する。
+                    // 「加算モード」の意図は Off 状態では既存の発光・点滅を変えず、
+                    // On 状態でのみ色を上乗せ/変更すること。
+                    // 元マテリアルを直接参照することで _EmissionBlink 等の点滅効果が完全に保持される。
+                    //
+                    // AdditiveBlending=false かつ Off カラーが黒の場合は黒バリアントを生成し、
+                    // Off 状態を確実に消灯する（発光が完全にオフになることを保証する）。
+                    bool offIsBlack = !(offColor.r > 0f || offColor.g > 0f || offColor.b > 0f);
+                    if (setup.AdditiveBlending && offIsBlack)
+                        map[(target, "LipSyncLight_Off")] = originalMat;
+                    else
+                        map[(target, "LipSyncLight_Off")] = CreateAndSaveMaterialVariant(
+                            originalMat, target.PropertyNames, offColor,
+                            $"{materialsPath}/{baseName}_Off.mat");
                     map[(target, "LipSyncLight_On")] = CreateAndSaveMaterialVariant(
                         originalMat, target.PropertyNames, onColor,
                         $"{materialsPath}/{baseName}_On.mat");
