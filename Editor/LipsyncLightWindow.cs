@@ -130,8 +130,9 @@ namespace LipsyncLight
             }
 
             // 重複セットアップ警告（エラーとして上部に表示）
+            // _setup != null が保証されているため _avatarRoot も非 null
             {
-                var allSetups = _avatarRoot.GetComponentsInChildren<LipsyncLightSetup>();
+                var allSetups = _avatarRoot!.GetComponentsInChildren<LipsyncLightSetup>();
                 if (allSetups.Length > 1)
                 {
                     var names = string.Join("、", allSetups.Select(s => s.gameObject.name));
@@ -796,6 +797,7 @@ namespace LipsyncLight
 
         private void RunSetup()
         {
+            if (_setup == null) return;
             try
             {
                 LipsyncLightBuilder.Build(_setup);
@@ -814,6 +816,7 @@ namespace LipsyncLight
 
         private void RunDelete()
         {
+            if (_setup == null) return;
             if (!EditorUtility.DisplayDialog(
                     "LipSync Light",
                     "生成物（AnimationClip・FX Controller・MA Merge Animator）を削除しますか？\n設定内容（ターゲット・カラー等）は保持されます。",

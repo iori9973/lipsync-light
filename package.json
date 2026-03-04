@@ -1,6 +1,6 @@
 {
   "name": "com.lipsync-light",
-  "version": "2.0.17",
+  "version": "2.0.18",
   "displayName": "LipSync Light",
   "description": "リップシンクに連動してマテリアルのエミッションを制御する Animator 設定を自動生成する Unity Editor 拡張です。",
   "unity": "2022.3",
