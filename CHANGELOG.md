@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.18] - 2026-03-04
+
+### Fixed
+- `RunSetup()` / `RunDelete()` で `_setup`（nullable）を非 nullable パラメータに渡していた CS8604 警告を修正
+  - 両メソッドの先頭に `if (_setup == null) return;` ガードを追加
+- 重複セットアップ警告ブロック内の `_avatarRoot` nullable 参照を `_avatarRoot!` に修正（CS8602）
+
 ## [2.0.17] - 2026-03-04
 
 ### Fixed
