@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.0.16] - 2026-03-04
+
+### Fixed
+- `AdditiveBlending=true` かつ Off カラーが黒のとき、Off 状態で元マテリアルの発光・点滅が消える問題を修正
+  - v2.0.15 では Off カラー=黒のとき常に黒バリアントを生成していたため、`AdditiveBlending=true` でも Off 状態の `_EmissionBlink` 等が黒バリアントの `_EmissionColor=(0,0,0)` で無効化されていた
+  - `AdditiveBlending=true` かつ Off カラー=黒の場合は元マテリアルをそのまま Off 状態として参照するよう変更（「加算モード」の本来の意図：Off 状態は元の発光・点滅を変えない）
+  - `AdditiveBlending=false` かつ Off カラー=黒の場合は引き続き黒バリアントを生成し、Off 状態を確実に消灯する
+
 ## [2.0.15] - 2026-03-03
 
 ### Fixed
