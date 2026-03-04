@@ -27,7 +27,7 @@
     <Compile Include="../Runtime/EmissionTarget.cs" />
     <Compile Include="../Runtime/LipsyncLightSetup.cs" />
     <!-- Editor: ビルダー + ShaderPropertyDetector -->
-    <Compile Include="../Editor/EmissionTarget.cs" />
+    <Compile Include="../Editor/ShaderPropertyDetector.cs" />
     <Compile Include="../Editor/LipsyncLightBuilder.cs" />
   </ItemGroup>
 </Project>
