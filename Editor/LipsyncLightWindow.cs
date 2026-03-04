@@ -130,7 +130,6 @@ namespace LipsyncLight
             }
 
             // 重複セットアップ警告（エラーとして上部に表示）
-            // _setup != null が保証されているため _avatarRoot も非 null
             {
                 var allSetups = _avatarRoot!.GetComponentsInChildren<LipsyncLightSetup>();
                 if (allSetups.Length > 1)

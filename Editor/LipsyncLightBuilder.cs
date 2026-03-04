@@ -73,17 +73,15 @@ namespace LipsyncLight
             RemoveLayerIfExists(controller, VoiceLayerName);
             RemoveLayerIfExists(controller, VisemeLayerName);
 
+            // PPtrCurve（マテリアルスワップ）方式で lilToon の _EmissionBlink 等と共存するため
             // 全ターゲット用マテリアルバリアントを事前生成する
-            // （PPtrCurve 方式を採用することで float curve による _EmissionColor 書き込みを行わず、
-            //   lilToon の _EmissionBlink 等のシェーダー内部点滅効果との共存を実現する）
             var variantMap = BuildVariantMap(setup, outputPath);
 
             if (setup.Mode == LipsyncMode.Voice || setup.Mode == LipsyncMode.Both)
             {
                 var offClip = CreateEmissionClip(
                     avatarRoot, setup.Targets,
-                    t => t.GetOffColor(setup.ColorGroups), "LipSyncLight_Off", variantMap,
-                    preserveOriginalForBlack: true);
+                    t => t.GetOffColor(setup.ColorGroups), "LipSyncLight_Off", variantMap);
                 var onClip = CreateEmissionClip(
                     avatarRoot, setup.Targets,
                     t => t.GetOnColor(setup.ColorGroups) * setup.IntensityMultiplier, "LipSyncLight_On", variantMap);
@@ -250,9 +248,8 @@ namespace LipsyncLight
 
         /// <summary>
         /// 複数ターゲット・複数プロパティのエミッションカラーを1枚の AnimationClip にまとめる。
-        /// variantMap にエントリがある場合は全 materialIndex に対して
-        /// PPtrCurve（マテリアルスワップ）方式を使用する。
-        /// これにより lilToon の _EmissionBlink 等のシェーダー内部点滅効果との共存が可能になる。
+        /// variantMap にエントリがある場合は PPtrCurve（マテリアルスワップ）方式を使用し、
+        /// lilToon の _EmissionBlink 等のシェーダー内部点滅効果との共存を保証する。
         /// variantMap が null またはエントリがない場合はフォールバックとして float curve を使用する。
         /// </summary>
         internal static AnimationClip CreateEmissionClip(
@@ -260,8 +257,7 @@ namespace LipsyncLight
             List<EmissionTarget> targets,
             Func<EmissionTarget, Color> colorSelector,
             string clipName,
-            Dictionary<(EmissionTarget, string), Material>? variantMap = null,
-            bool preserveOriginalForBlack = false)
+            Dictionary<(EmissionTarget, string), Material>? variantMap = null)
         {
             var clip = new AnimationClip { name = clipName };
 
@@ -273,11 +269,7 @@ namespace LipsyncLight
                 string relativePath = GetRelativePath(avatarRoot.transform, target.Renderer.transform);
                 Type   rendererType = target.Renderer.GetType();
 
-                // バリアントマテリアルが用意されている場合は全 materialIndex に対して
-                // PPtrCurve（m_Materials.Array.data[N]）でマテリアルごとスワップする。
-                // float curve で _EmissionColor を書き込むと、他のアニメーターレイヤーや
-                // lilToon の _EmissionBlink 等のシェーダー内部点滅処理に干渉するため
-                // この方式を採用する。materialIndex==0 も対象。
+                // variantMap にエントリがある場合は PPtrCurve（マテリアルスワップ）で処理
                 if (variantMap != null
                     && variantMap.TryGetValue((target, clipName), out var variantMat))
                 {
@@ -285,7 +277,7 @@ namespace LipsyncLight
                     continue;
                 }
 
-                // materialIndex == 0 またはバリアントなしの場合は float curve を使用
+                // フォールバック: float curve を使用
                 Color  baseColor    = colorSelector(target);
                 var bindingCache = BuildBindingCache(target.Renderer.gameObject, avatarRoot, relativePath);
 
@@ -293,22 +285,7 @@ namespace LipsyncLight
                 {
                     if (string.IsNullOrEmpty(propName)) continue;
 
-                    // Off クリップかつ設定カラーが黒の場合、元マテリアルの実際の色にフォールバック。
-                    // lilToon の _EmissionBlink 等はシェーダー内部で _EmissionColor を変調するため、
-                    // Off 状態でもゼロ以外の色が必要（黒だと点滅効果が消える）。
-                    Color color = baseColor;
-                    if (preserveOriginalForBlack && !(color.r > 0f || color.g > 0f || color.b > 0f))
-                    {
-                        var mats   = target.Renderer.sharedMaterials;
-                        var srcMat = mats.Length > target.MaterialIndex ? mats[target.MaterialIndex] : null;
-                        if (srcMat != null && srcMat.HasProperty(propName))
-                        {
-                            var origColor = srcMat.GetColor(propName);
-                            if (origColor.r > 0f || origColor.g > 0f || origColor.b > 0f)
-                                color = origColor;
-                        }
-                    }
-
+                    Color  color    = baseColor;
                     string propBase = BuildPropertyPath(target.MaterialIndex, propName);
                     var channels = new (string suffix, float value)[]
                     {
@@ -355,13 +332,9 @@ namespace LipsyncLight
         }
 
         /// <summary>
-        /// 全ターゲットについて、各クリップ用のマテリアルバリアントを生成し
-        /// (target, clipName) をキーとする辞書を返す。
-        /// materialIndex==0 を含む全インデックスが対象。
-        /// AdditiveBlending=true かつ Off カラーが黒の場合は元マテリアルをそのまま Off 状態として参照し、
-        /// バリアントを生成しない（加算モードの意図：Off 状態では元の発光・点滅を変えない）。
-        /// AdditiveBlending=false かつ Off カラーが黒の場合は黒バリアントを生成して確実に消灯する。
-        /// バリアントは元マテリアルのコピーに PropertyNames の色を上書きしたもの。
+        /// 全ターゲット・全クリップ用のマテリアルバリアントを生成し (target, clipName) キーの辞書を返す。
+        /// AdditiveBlending=true + Off カラー黒の場合のみ元マテリアルを直接参照（_EmissionBlink 等を保持）。
+        /// それ以外は常にバリアントを生成する。
         /// </summary>
         private static Dictionary<(EmissionTarget, string), Material> BuildVariantMap(
             LipsyncLightSetup setup, string outputPath)
@@ -400,13 +373,8 @@ namespace LipsyncLight
                     var offColor = target.GetOffColor(setup.ColorGroups);
                     var onColor  = target.GetOnColor(setup.ColorGroups) * setup.IntensityMultiplier;
 
-                    // AdditiveBlending=true かつ Off カラーが黒の場合、元マテリアルをそのまま参照する。
-                    // 「加算モード」の意図は Off 状態では既存の発光・点滅を変えず、
-                    // On 状態でのみ色を上乗せ/変更すること。
-                    // 元マテリアルを直接参照することで _EmissionBlink 等の点滅効果が完全に保持される。
-                    //
-                    // AdditiveBlending=false かつ Off カラーが黒の場合は黒バリアントを生成し、
-                    // Off 状態を確実に消灯する（発光が完全にオフになることを保証する）。
+                    // AdditiveBlending=true + 黒: 元マテリアルをそのまま参照（_EmissionBlink 等を保持）
+                    // AdditiveBlending=false + 黒: 黒バリアントで確実に消灯
                     bool offIsBlack = !(offColor.r > 0f || offColor.g > 0f || offColor.b > 0f);
                     if (setup.AdditiveBlending && offIsBlack)
                         map[(target, "LipSyncLight_Off")] = originalMat;

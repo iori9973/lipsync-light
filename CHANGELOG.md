@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.0.19] - 2026-03-04
+
+### Changed
+- リファクタリング（機能変更なし）
+  - `CreateEmissionClip` から不使用の `preserveOriginalForBlack` パラメータを削除（v2.0.16 以降は `BuildVariantMap` 側で処理済み）
+  - `Editor/EmissionTarget.cs` → `Editor/ShaderPropertyDetector.cs` に改名（クラス名との一致）
+  - `Editor/LipsyncLightConfig.cs` → `Editor/LipsyncLightSetupEditor.cs` に改名（クラス名との一致）
+  - 冗長な内部コメントを整理
+
 ## [2.0.18] - 2026-03-04
 
 ### Fixed
