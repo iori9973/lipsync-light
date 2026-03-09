@@ -79,16 +79,27 @@ namespace LipsyncLight
 
             if (setup.Mode == LipsyncMode.Voice || setup.Mode == LipsyncMode.Both)
             {
-                var offClip = CreateEmissionClip(
-                    avatarRoot, setup.Targets,
-                    t => t.GetOffColor(setup.ColorGroups), "LipSyncLight_Off", variantMap);
-                var onClip = CreateEmissionClip(
-                    avatarRoot, setup.Targets,
-                    t => t.GetOnColor(setup.ColorGroups) * setup.IntensityMultiplier, "LipSyncLight_On", variantMap);
+                int steps = Mathf.Max(2, setup.VoiceFadeSteps);
+                var voiceClips = new AnimationClip[steps];
 
-                SaveClip(offClip, outputPath + "/Animations/LipSyncLight_Off.anim");
-                SaveClip(onClip,  outputPath + "/Animations/LipSyncLight_On.anim");
-                BuildVoiceLayer(controller, offClip, onClip,
+                for (int s = 0; s < steps; s++)
+                {
+                    float t = (float)s / (steps - 1);
+                    string clipName = $"LipSyncLight_Voice_{s}";
+
+                    voiceClips[s] = CreateEmissionClip(
+                        avatarRoot, setup.Targets,
+                        target =>
+                        {
+                            var offColor = target.GetOffColor(setup.ColorGroups);
+                            var onColor  = target.GetOnColor(setup.ColorGroups) * setup.IntensityMultiplier;
+                            return Color.Lerp(offColor, onColor, t);
+                        },
+                        clipName, variantMap);
+                    SaveClip(voiceClips[s], $"{outputPath}/Animations/{clipName}.anim");
+                }
+
+                BuildVoiceLayer(controller, voiceClips,
                     setup.VoiceThreshold, setup.VoiceFadeTime, setup.AdditiveBlending);
             }
 
@@ -129,8 +140,7 @@ namespace LipsyncLight
 
         private static void BuildVoiceLayer(
             AnimatorController controller,
-            AnimationClip offClip,
-            AnimationClip onClip,
+            AnimationClip[] voiceClips,
             float threshold,
             float fadeTime,
             bool additive)
@@ -144,19 +154,22 @@ namespace LipsyncLight
 
             // Off ステート（消灯）: デフォルト
             var offState = sm.AddState("Off");
-            offState.motion             = offClip;
+            offState.motion             = voiceClips[0];
             offState.writeDefaultValues = false;
             sm.defaultState             = offState;
 
-            // On ステート（BlendTree: Voice の強さに応じて発光強度をブレンド）
+            // On ステート（BlendTree: Voice の強さに応じて中間マテリアルを段階的にブレンド）
             var blendTree = new BlendTree();
             blendTree.name           = "LipSync Light Voice";
             blendTree.hideFlags      = HideFlags.HideInHierarchy;
             blendTree.blendParameter = VoiceParamName;
             blendTree.blendType      = BlendTreeType.Simple1D;
             AssetDatabase.AddObjectToAsset(blendTree, controller);
-            blendTree.AddChild(offClip, 0f);
-            blendTree.AddChild(onClip,  1f);
+            for (int s = 0; s < voiceClips.Length; s++)
+            {
+                float pos = (float)s / (voiceClips.Length - 1);
+                blendTree.AddChild(voiceClips[s], pos);
+            }
 
             var onState = sm.AddState("On");
             onState.motion             = blendTree;
@@ -370,21 +383,25 @@ namespace LipsyncLight
 
                 if (needsVoice)
                 {
+                    int steps = Mathf.Max(2, setup.VoiceFadeSteps);
                     var offColor = target.GetOffColor(setup.ColorGroups);
                     var onColor  = target.GetOnColor(setup.ColorGroups) * setup.IntensityMultiplier;
 
-                    // AdditiveBlending=true + 黒: 元マテリアルをそのまま参照（_EmissionBlink 等を保持）
-                    // AdditiveBlending=false + 黒: 黒バリアントで確実に消灯
-                    bool offIsBlack = !(offColor.r > 0f || offColor.g > 0f || offColor.b > 0f);
-                    if (setup.AdditiveBlending && offIsBlack)
-                        map[(target, "LipSyncLight_Off")] = originalMat;
-                    else
-                        map[(target, "LipSyncLight_Off")] = CreateAndSaveMaterialVariant(
-                            originalMat, target.PropertyNames, offColor,
-                            $"{materialsPath}/{baseName}_Off.mat");
-                    map[(target, "LipSyncLight_On")] = CreateAndSaveMaterialVariant(
-                        originalMat, target.PropertyNames, onColor,
-                        $"{materialsPath}/{baseName}_On.mat");
+                    for (int s = 0; s < steps; s++)
+                    {
+                        float t = (float)s / (steps - 1);
+                        var color = Color.Lerp(offColor, onColor, t);
+                        string clipName = $"LipSyncLight_Voice_{s}";
+
+                        // ステップ 0 + AdditiveBlending + 黒: 元マテリアルをそのまま参照（_EmissionBlink 等を保持）
+                        bool isBlack = !(color.r > 0f || color.g > 0f || color.b > 0f);
+                        if (s == 0 && setup.AdditiveBlending && isBlack)
+                            map[(target, clipName)] = originalMat;
+                        else
+                            map[(target, clipName)] = CreateAndSaveMaterialVariant(
+                                originalMat, target.PropertyNames, color,
+                                $"{materialsPath}/{baseName}_Voice_{s}.mat");
+                    }
                 }
 
                 if (needsViseme)
@@ -534,8 +551,17 @@ namespace LipsyncLight
             AssetDatabase.DeleteAsset(controllerPath);
 
             string animDir = outputPath + "/Animations";
+            // 旧形式の Off/On クリップ（後方互換）
             AssetDatabase.DeleteAsset(animDir + "/LipSyncLight_Off.anim");
             AssetDatabase.DeleteAsset(animDir + "/LipSyncLight_On.anim");
+            // Voice ステップクリップ
+            for (int s = 0; s < 64; s++)
+            {
+                string path = $"{animDir}/LipSyncLight_Voice_{s}.anim";
+                if (string.IsNullOrEmpty(AssetDatabase.AssetPathToGUID(path, AssetPathToGUIDOptions.OnlyExistingAssets)))
+                    break;
+                AssetDatabase.DeleteAsset(path);
+            }
             for (int i = 0; i < 15; i++)
                 AssetDatabase.DeleteAsset($"{animDir}/LipSyncLight_Viseme_{i}.anim");
 

@@ -20,6 +20,7 @@ namespace LipsyncLight
         // セクションの開閉状態（domain reload 後も保持）
         [SerializeField] private bool _targetsFoldout      = true;   // 最初から開く
         [SerializeField] private bool _colorGroupsFoldout  = true;   // 最初から開く
+        [SerializeField] private bool _advancedFoldout     = false;  // 詳細設定（デフォルト閉じ）
 
         private Vector2 _scrollPos;
 
@@ -171,6 +172,21 @@ namespace LipsyncLight
                 _setup.VoiceThreshold = EditorGUILayout.Slider(
                     "点灯閾値", _setup.VoiceThreshold, 0f, 1f);
                 _setup.VoiceFadeTime = DurationField("フェード時間 (秒)", _setup.VoiceFadeTime);
+                EditorGUILayout.Space(4);
+
+                _advancedFoldout = EditorGUILayout.Foldout(_advancedFoldout, "詳細設定", true, EditorStyles.boldLabel);
+                if (_advancedFoldout)
+                {
+                    EditorGUI.indentLevel++;
+                    _setup.VoiceFadeSteps = EditorGUILayout.IntSlider(
+                        "フェードステップ数", _setup.VoiceFadeSteps, 2, 16);
+                    if (_setup.VoiceFadeSteps > 2)
+                        EditorGUILayout.HelpBox(
+                            $"Off → On 間に {_setup.VoiceFadeSteps - 2} 段階の中間マテリアルが生成されます。\n" +
+                            "ステップ数が多いほど滑らかですが、生成マテリアル数が増えます。",
+                            MessageType.Info);
+                    EditorGUI.indentLevel--;
+                }
                 EditorGUILayout.Space(8);
             }
 

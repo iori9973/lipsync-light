@@ -24,6 +24,9 @@ namespace UnityEngine
         public static Color white => new Color(1, 1, 1, 1);
         public static Color operator *(Color c, float f)
             => new Color(c.r * f, c.g * f, c.b * f, c.a * f);
+        public static Color Lerp(Color a, Color b, float t)
+            => new Color(a.r + (b.r - a.r) * t, a.g + (b.g - a.g) * t,
+                         a.b + (b.b - a.b) * t, a.a + (b.a - a.a) * t);
     }
 
     public enum HideFlags
@@ -175,6 +178,7 @@ namespace UnityEngine
     {
         public static float Clamp(float v, float min, float max)
             => v < min ? min : v > max ? max : v;
+        public static int   Max(int a, int b)       => a > b ? a : b;
         public static float Max(float a, float b) => a > b ? a : b;
         public static float Abs(float v) => v < 0 ? -v : v;
     }
@@ -274,7 +278,10 @@ namespace UnityEditor
         public static void   Refresh()                                         { }
         public static bool   IsValidFolder(string path)                        => false;
         public static T?     LoadAssetAtPath<T>(string path) where T : class  => null;
+        public static string AssetPathToGUID(string path, AssetPathToGUIDOptions options = default) => "";
     }
+
+    public enum AssetPathToGUIDOptions { OnlyExistingAssets = 0 }
 
     public static class EditorUtility
     {
@@ -336,6 +343,7 @@ namespace UnityEditor
         public static int   Popup(string l, int i, string[] opts)               => i;
         public static int   IntField(string l, int v)                           => v;
         public static float Slider(string l, float v, float min, float max)     => v;
+        public static int   IntSlider(string l, int v, int min, int max)       => v;
         public static string TextField(string l, string v)                      => v ?? "";
         public static string TextField(string v, params GUILayoutOption[] opts) => v ?? "";
         public static Color ColorField(string l, Color c)                       => c;

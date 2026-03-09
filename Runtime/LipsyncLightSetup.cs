@@ -24,6 +24,8 @@ namespace LipsyncLight
         public float VoiceThreshold = 0.1f;
         // Voice モード: 点灯・消灯のフェード時間（秒）
         public float VoiceFadeTime = 0.05f;
+        // Voice モード: Off→On 間の中間マテリアルステップ数（2 = 従来の Off/On のみ、大きいほど滑らか）
+        public int VoiceFadeSteps = 2;
 
         public List<ColorGroup> ColorGroups = new List<ColorGroup>();
         public List<EmissionTarget> Targets = new List<EmissionTarget>();
